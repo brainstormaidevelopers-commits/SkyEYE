@@ -1,0 +1,28 @@
+---
+# Headscale Config // SkyEye Sovereign Edition
+server_url: http://127.0.0.1:8080
+listen_addr: 0.0.0.0:8080
+metrics_listen_addr: 0.0.0.0:9090
+
+db_type: sqlite3
+db_path: /var/lib/headscale/db.sqlite
+
+dns_config:
+  magic_dns: true
+  base_domain: skyeye.private
+
+# Key rotation and security
+noise:
+  private_key_path: /var/lib/headscale/noise_private.key
+
+prefixes:
+  v4: 100.64.0.0/10
+  v6: fd7a:115c:a1e0::/48
+
+derp:
+  server:
+    enabled: true
+    region_id: 999
+    region_code: "skyeye"
+    region_name: "SkyEye Private Relay"
+    stun_listen_addr: "0.0.0.0:3478"

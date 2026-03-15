@@ -1,7 +1,7 @@
 # [ BRANDING_KIT ] // SKYEYE 0.1
 
 ### 1. MISSION STATEMENT
-SkyEye is the Frictionless Earth Interface. It is the bridge between raw planetary telemetry and human understanding.
+SkyEye is the Frictionless Earth Interface, powered by Sovereign Orchestration. It is the bridge between raw planetary telemetry and human understanding, secured via daemonless infrastructure.
 
 ### 2. THE VISUAL DOCTRINE: NEO-BRUTALIST RETRO-TECH
 *   **Core Principle**: Information is the hero. The interface is the frame.

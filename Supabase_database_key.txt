@@ -1,0 +1,5 @@
+Supabase
+
+
+database:SKYEYE-EARTH
+Passkey:.Y#6hWxqMqY#6%K

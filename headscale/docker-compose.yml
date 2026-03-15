@@ -1,0 +1,27 @@
+version: '3.7'
+services:
+  headscale:
+    image: headscale/headscale:latest
+    container_name: skyeye-headscale
+    volumes:
+      - ./config:/etc/headscale
+      - ./data:/var/lib/headscale
+    ports:
+      - "8080:8080"
+      - "9090:9090"
+      - "3478:3478/udp"
+    command: headscale serve
+    restart: always
+
+  # UI-Gataway: This acts as the bridge for your Netlify site.
+  # We use Caddy to provide a secure automatic HTTPS tunnel if needed,
+  # or just to proxy the Headscale UI.
+  gateway:
+    image: caddy:latest
+    container_name: skyeye-gateway
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+    restart: always

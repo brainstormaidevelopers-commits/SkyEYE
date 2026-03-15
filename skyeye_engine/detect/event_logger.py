@@ -11,6 +11,7 @@ class SkyEyeEventLogger:
     def __init__(self):
         self.log_file = os.path.join(Config.BASE_DIR, "output", "event_log.jsonl")
         self.memory_logs = [] # Keep last 100 in memory for fast UI access
+        self.socketio = None # To be injected by controller.py
 
     def log(self, category, message, data=None):
         entry = {
@@ -31,7 +32,27 @@ class SkyEyeEventLogger:
                 f.write(json.dumps(entry) + "\n")
         except Exception as e:
             print(f"[LOGGER] Error writing to disk: {e}")
+
+        # Save to Database
+        try:
+            from skyeye_engine.db import db_manager, LogModel
+            session = db_manager.Session()
+            db_log = LogModel(
+                category=category,
+                message=message,
+                data=data or {}
+            )
+            session.add(db_log)
+            session.commit()
+            session.close()
+        except Exception as e:
+            # We don't want to crash the whole app if the DB is down
+            print(f"[LOGGER] Database logging failed: {e}")
             
+        # Emit via WebSockets for real-time UI Pulse
+        if self.socketio:
+            self.socketio.emit('tactical_alert', entry)
+
         print(f"[{category.upper()}] {message}")
         return entry
 

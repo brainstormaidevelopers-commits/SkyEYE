@@ -2,6 +2,7 @@ import threading
 import time
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+from flask_socketio import SocketIO, emit
 from skyeye_engine.config import Config
 from skyeye_engine.detect.news_scrapper import NewsScraper
 from skyeye_engine.fusion.temporal_fusion import TGHDeltaEngine
@@ -15,9 +16,21 @@ from skyeye_engine.detect.event_detector import EventDetector
 from skyeye_engine.brain.semantic_engine import SemanticEngine
 from skyeye_engine.brain.anomaly_dispatcher import PriorityDispatcher
 from skyeye_engine.fusion.video_geolocator import VideoGeolocator
+from skyeye_engine.db import db_manager
 
 app = Flask(__name__)
 CORS(app)
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+
+# Inject socketio into logger for real-time broadcasts
+logger.socketio = socketio
+
+# Initialize Database Schema
+print("[0CORE] Initializing Supabase Perspective...")
+try:
+    db_manager.init_db()
+except Exception as e:
+    print(f"[0CORE] Database initialization warning: {e}")
 
 # Initialize Component Layer 
 catalog = CatalogService()
@@ -38,6 +51,25 @@ def background_dispatch_worker():
     print("[0CORE] Starting Background GPU Dispatch Worker...")
     while True:
         job_id = dispatcher.execute_next_tick()
+        
+        # Periodic UI Telemetry Push via WebSockets
+        try:
+            telemetry = {
+                "gpu_pool": {
+                    "capacity": dispatcher.gpu_pool.capacity,
+                    "active_jobs": dispatcher.gpu_pool.active_jobs,
+                },
+                "queues": {
+                    "immediate": len(dispatcher.queues["IMMEDIATE"]),
+                    "normal": len(dispatcher.queues["NORMAL"]),
+                    "low": len(dispatcher.queues["LOW"])
+                },
+                "active_events": len(detector.active_events)
+            }
+            socketio.emit('system_status', telemetry)
+        except Exception:
+            pass
+
         if job_id:
             # Here we simulate the time it takes the Genesis Engine / 0Core to process the tiles
             time.sleep(2.0) 
@@ -271,10 +303,6 @@ def probe_location():
     })
 
 if __name__ == "__main__":
-    print("""
-    =========================================
-    SKYEYE ORCHESTRATION ENGINE v0.1 ALPHA
-    =========================================
-    The Window to Earth is Opening...
-    """)
-    app.run(port=5050, debug=True)
+    # Run with SocketIO
+    print(f"[0CORE] Deployment Active on port 5050...")
+    socketio.run(app, host='0.0.0.0', port=5050, debug=True)

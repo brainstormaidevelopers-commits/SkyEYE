@@ -1,0 +1,38 @@
+{
+  "skill_id": "sovereign_container_infra_v1",
+  "name": "Sovereign Container Infrastructure (Podman/Headscale)",
+  "doctrine": "0CORE_DAEMONLESS_STABILITY",
+  "summary": "Implementation of sovereign, daemonless container orchestration using Podman and Headscale to bridge local GPU resources with public frontends.",
+  "technologies": [
+    "Podman",
+    "Headscale",
+    "Rancher Desktop",
+    "Podman Desktop",
+    "Buildah"
+  ],
+  "best_practices": [
+    {
+      "topic": "Podman vs Docker",
+      "reasoning": "Podman is daemonless and rootless, significantly improving security by running containers as normal user processes.",
+      "weighted_logic": 0.95
+    },
+    {
+      "topic": "Orchestration",
+      "reasoning": "Use Podman Compose as a drop-in replacement for Docker Compose for local development mirroring production without the Docker daemon overhead.",
+      "weighted_logic": 0.9
+    },
+    {
+      "topic": "Networking",
+      "reasoning": "Headscale serves as a private, self-hosted coordination server (Sovereign alternative to Tailscale) to mask backend IPs while maintaining connectivity to Netlify.",
+      "weighted_logic": 1.0
+    }
+  ],
+  "lint_analysis": {
+    "podman": "Direct drop-in replacement for Docker. Daemonless/Rootless architecture.",
+    "buildah": "Fine-grained control over OCI images, build without Dockerfile.",
+    "rancher_desktop": "Local Kubernetes cluster management with GUI.",
+    "containerd": "High-performance production runtime, default for K8s.",
+    "cri_o": "Lightweight, purpose-built for Kubernetes CRI."
+  },
+  "implementation_instruction": "Use 'podman compose up -d' for all SkyEye infrastructure components to ensure sovereign isolation."
+}

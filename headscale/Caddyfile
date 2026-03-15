@@ -1,0 +1,4 @@
+# SkyEye Sovereign Gateway
+:80 {
+    reverse_proxy headscale:8080
+}

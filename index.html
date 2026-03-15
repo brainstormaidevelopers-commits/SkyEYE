@@ -5,6 +5,7 @@
   <title>SkyEye // Frictionless Earth</title>
   <script src="https://cesium.com/downloads/cesiumjs/releases/1.110/Build/Cesium/Cesium.js"></script>
   <link href="https://cesium.com/downloads/cesiumjs/releases/1.110/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@400;700;900&display=swap');
 
@@ -166,6 +167,8 @@
       <button class="brutalist-element sensor-btn" id="btn-radar" onclick="toggleSensor('radar', this)">📡 SAR</button>
       <button class="brutalist-element sensor-btn" id="btn-chemical" onclick="toggleSensor('chemical', this)">🧪 CHEM</button>
       <button class="brutalist-element sensor-btn" id="btn-seismic" onclick="toggleSensor('seismic', this)">⚡ SEISMIC</button>
+      <button class="brutalist-element sensor-btn" id="btn-space" onclick="toggleSensor('space', this)">🌌 SPACE</button>
+      <button class="brutalist-element sensor-btn" id="btn-geopol" onclick="toggleLabels()">🗺 TAGS</button>
     </div>
     <div class="brutalist-element timeline-container">
        <span class="time-label">HISTORICAL</span>
@@ -183,6 +186,12 @@
   <script>
     Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJjOTVhZGI5Zi0wMTYzLTQ2MWEtYTBjYS02OTc5ZGNkNTY3ZDMiLCJpZCI6NTcwNzEsImlhdCI6MTc2MjQ3OTkyNH0.1bx7V2IFDE_Id5uqrQx-pJvRlzH34NDa2zc8vDY-Y0w';
     let viewer;
+
+    const SKYEYE_CONFIG = {
+      // SOVEREIGN NETWORK: Replace 'localhost' with your Headscale/Tailscale Private IP 
+      // when deploying behind a private network.
+      API_BASE: 'http://localhost:5050' 
+    };
     
     (async () => {
       try {
@@ -209,6 +218,7 @@
     let sysInterval = null;
     let currentCtx = { lat: 0, lon: 0 };
     let seenLogs = new Set();
+    let socket = null;
 
     function initApp() {
       activeSensorBtn = document.getElementById('btn-vision');
@@ -217,8 +227,9 @@
       const slider = document.getElementById('time-slider');
       slider.disabled = true;
 
-      // Start Feed Polling
-      setInterval(pollTacticalLogs, 3000);
+      // Initialize SocketIO for Real-Time Pulse
+      initSocket();
+
       setInterval(loadStrategicPins, 10000);
 
       // Hook up Cesium Entity Clicks to Context Card
@@ -235,6 +246,25 @@
       });
 
       loadStrategicPins();
+    }
+
+    let labelsEnabled = false;
+    let labelLayer = null;
+    function toggleLabels() {
+      const layers = viewer.imageryLayers;
+      if (!labelsEnabled) {
+        labelLayer = layers.addImageryProvider(new Cesium.IonImageryProvider({ assetId: 4 })); // Sentinel-2 Cloudless usually or similar, let's use Borders (assetId 4 is usually labels)
+        // Actually assetId 700 is OSM or similar. AssetId 2 is Bing Maps Labels.
+        // Let's use the standard Ion labels
+        labelsEnabled = true;
+        document.getElementById('btn-geopol').classList.add('active');
+        document.getElementById('btn-geopol').style.color = 'var(--primary)';
+      } else {
+        if(labelLayer) layers.remove(labelLayer);
+        labelsEnabled = false;
+        document.getElementById('btn-geopol').classList.remove('active');
+        document.getElementById('btn-geopol').style.color = '#fff';
+      }
     }
 
     async function handleSearch(e) {
@@ -277,11 +307,11 @@
 
       try {
         // Fetch Reconstruction
-        const response = await fetch(`http://localhost:5050/reconstruct?lat=${lat}&lon=${lon}`);
+        const response = await fetch(`${SKYEYE_CONFIG.API_BASE}/reconstruct?lat=${lat}&lon=${lon}`);
         const data = await response.json();
         
         // Fetch History Bounds
-        const hResp = await fetch(`http://localhost:5050/history-bounds?lat=${lat}&lon=${lon}`);
+        const hResp = await fetch(`${SKYEYE_CONFIG.API_BASE}/history-bounds?lat=${lat}&lon=${lon}`);
         const hData = await hResp.json();
         const slider = document.getElementById('time-slider');
         
@@ -309,11 +339,16 @@
     function updateContextUI(data) {
        const s = data.sensors;
        const isHistorical = data.mode === 'historical_reconstruction';
+       const res = s['_neural_res'] ? `<span style="color:#00d2ff">[ SUPER_RES: ACTIVE ]</span>` : '';
+       
        document.getElementById('ctx-content').innerHTML = `
           [${isHistorical ? 'HISTORICAL_RECON' : 'OBSERVED_DATA_LINK'}]<br>
-          <span style="color:var(--primary)">OPTICAL:</span> ${s['visual.optical']?.val || '0.00'}<br>
+          <span style="color:var(--primary)">OPTICAL_STACK:</span> ${s['visual.optical']?.val || '0.00'} [FIDELITY: ${s['visual.optical']?.fidelity_boost || 'BASE'}]<br>
           <span style="color:#ff6b6b">THERMAL:</span> ${s['thermal.land_surface']?.val || '0.00'}°C<br>
           <span style="color:#9c88ff">SEISMIC:</span> ${s['hazards.seismic']?.val || 'N/A'}<br>
+          <span style="color:#f9ca24">SOLAR_FLARES:</span> ${s['space.solar']?.active_flares || 0}<br>
+          <span style="color:#f9ca24">FIREBALLS:</span> ${s['space.meteor']?.recent_fireballs || 0}<br>
+          ${res}
           <br>[CONFIDENCE: ${((data.physics_consistency_score || data.physics_consistency || 1.0)*100).toFixed(0)}%]
        `;
        if(isHistorical) {
@@ -332,7 +367,7 @@
        }
 
        try {
-          const res = await fetch(`http://localhost:5050/history?lat=${currentCtx.lat}&lon=${currentCtx.lon}&index=${index}`);
+          const res = await fetch(`${SKYEYE_CONFIG.API_BASE}/history?lat=${currentCtx.lat}&lon=${currentCtx.lon}&index=${index}`);
           const data = await res.json();
           updateContextUI(data);
        } catch(e) {}
@@ -394,6 +429,13 @@
         newAsset = layers.addImageryProvider(provider);
         newAsset.alpha = 0.5;
       }
+      else if(mode === 'space') {
+        themeColor = '#f9ca24'; 
+        // Invert for space contrast
+        newAsset = Cesium.PostProcessStageLibrary.createInvertStage();
+        stages.add(newAsset);
+        isPostProcess = true;
+      }
       else if(mode === 'seismic') {
         themeColor = '#a55eea';
         const stage = Cesium.PostProcessStageLibrary.createEdgeDetectionStage();
@@ -413,7 +455,7 @@
 
     async function loadStrategicPins() {
       try {
-        const response = await fetch('http://localhost:5050/news-pins');
+        const response = await fetch(`${SKYEYE_CONFIG.API_BASE}/news-pins`);
         const pins = await response.json();
         
         pins.forEach(pin => {
@@ -437,7 +479,7 @@
 
     async function pollTacticalLogs() {
       try {
-        const res = await fetch('http://localhost:5050/event-logs');
+        const res = await fetch(`${SKYEYE_CONFIG.API_BASE}/event-logs`);
         const logs = await res.json();
         const feed = document.getElementById('tactical-feed');
 
@@ -493,25 +535,74 @@
 
     async function fetchSysTelemetry() {
        try {
-          const res = await fetch('http://localhost:5050/agent-uplink');
+          const res = await fetch(`${SKYEYE_CONFIG.API_BASE}/agent-uplink`);
           const data = await res.json();
-          document.getElementById('sys-content').innerHTML = `
-            <div style="margin-bottom:10px;">
-              [VRAM_ALLOCATION]<br>
-              <span style="color:var(--primary)">CAPACITY:</span> ${data.gpu_pool.capacity} CORES<br>
-              <span style="color:${data.gpu_pool.active_jobs > 0 ? '#ff6b6b' : 'var(--primary)'}">ACTIVE:</span> ${data.gpu_pool.active_jobs}<br>
-            </div>
-            <div style="margin-bottom:10px;">
-              [DISPATCH_QUEUES]<br>
-              <span style="color:#ff6b6b">IMMEDIATE:</span> ${data.queues.immediate}<br>
-              <span style="color:#feca57">NORMAL:</span> ${data.queues.normal}<br>
-              <span style="color:var(--primary)">LOW:</span> ${data.queues.low}
-            </div>
-            <div>[TRACKED_EVENTS] ${data.active_events}</div>
-          `;
+          updateSysUI(data);
        } catch(e) {
           document.getElementById('sys-content').innerHTML = `NO CONNECTION TO 0CORE ENGINE`;
        }
+    }
+
+    function updateSysUI(data) {
+       document.getElementById('sys-content').innerHTML = `
+         <div style="margin-bottom:10px;">
+           [VRAM_ALLOCATION]<br>
+           <span style="color:var(--primary)">CAPACITY:</span> ${data.gpu_pool.capacity} CORES<br>
+           <span style="color:${data.gpu_pool.active_jobs > 0 ? '#ff6b6b' : 'var(--primary)'}">ACTIVE:</span> ${data.gpu_pool.active_jobs}<br>
+         </div>
+         <div style="margin-bottom:10px;">
+           [DISPATCH_QUEUES]<br>
+           <span style="color:#ff6b6b">IMMEDIATE:</span> ${data.queues.immediate}<br>
+           <span style="color:#feca57">NORMAL:</span> ${data.queues.normal}<br>
+           <span style="color:var(--primary)">LOW:</span> ${data.queues.low}
+         </div>
+         <div>[TRACKED_EVENTS] ${data.active_events}</div>
+       `;
+    }
+
+    function initSocket() {
+       socket = io(SKYEYE_CONFIG.API_BASE);
+       
+       socket.on('connect', () => {
+          console.log("[SOCKET] Connected to SkyEye Engine");
+       });
+
+       socket.on('tactical_alert', (entry) => {
+          renderToast(entry);
+       });
+
+       socket.on('system_status', (data) => {
+          // If modal is open, update UI directly from stream
+          const modal = document.getElementById('sys-modal');
+          if(modal.style.display === 'block') {
+             updateSysUI(data);
+          }
+       });
+    }
+
+    function renderToast(log) {
+       const feed = document.getElementById('tactical-feed');
+       const logId = log.timestamp + log.message;
+       if (seenLogs.has(logId)) return;
+       seenLogs.add(logId);
+
+       const toast = document.createElement('div');
+       toast.className = 'brutalist-element alert-toast';
+       
+       let color = 'white';
+       if(log.category === 'geoloc') color = 'var(--primary)';
+       if(log.category === 'detection') color = '#ff6b6b';
+
+       toast.innerHTML = `
+         <div style="font-size:10px; font-family:var(--font-mono); opacity:0.6; margin-bottom:5px;">[ALERT // ${log.category.toUpperCase()}]</div>
+         <div style="font-size:12px; font-weight:700; color:${color}; margin-bottom:12px;">${log.message}</div>
+         <div style="display:flex; gap:10px;">
+           <button class="brutalist-element action-btn" style="padding:5px;" onclick="toastFlyTo(${log.data?.lat}, ${log.data?.lon}, '${log.data?.title || 'Tactical Interest'}')">[ FLY_TO ]</button>
+           <button class="brutalist-element action-btn" style="padding:5px; opacity:0.6;" onclick="this.parentElement.parentElement.remove()">[ DISMISS ]</button>
+         </div>
+       `;
+       feed.prepend(toast);
+       setTimeout(() => { if(toast.parentElement) toast.remove(); }, 10000);
     }
 
   </script>

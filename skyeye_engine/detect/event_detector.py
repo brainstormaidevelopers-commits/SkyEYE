@@ -38,6 +38,26 @@ class EventDetector:
                 print(f"[DETECT] Critical Event Triggered! {event['title']} (Score: {score:.1f})")
                 self.active_events.append(event)
                 self._seen_ids.add(sig_id)
+
+                # Persist to Database
+                try:
+                    from skyeye_engine.db import db_manager, EventModel
+                    session = db_manager.Session()
+                    db_event = EventModel(
+                        external_id=sig_id,
+                        title=event['title'],
+                        lat=event['lat'],
+                        lon=event['lon'],
+                        score=event['score'],
+                        category=event['type'],
+                        data=signal
+                    )
+                    session.add(db_event)
+                    session.commit()
+                    session.close()
+                except Exception as e:
+                    print(f"[DETECT] Database save failed: {e}")
+
                 detected.append(event)
         return detected
 

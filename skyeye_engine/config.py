@@ -33,6 +33,7 @@ class Config:
     # Provider-Native Credentials extension
     USGS_M2M_API_KEY = os.getenv("USGS_M2M_API_KEY")
     PLANET_API_KEY = os.getenv("PLANET_API_KEY")
+    DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./skyeye.db")
 
     
     # --- PLANETARY SCALE PARAMETERS (Doctrine v1) ---
