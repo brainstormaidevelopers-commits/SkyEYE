@@ -188,12 +188,15 @@ class Dither3DEngine:
         }
         return layers_dict
 
+from skyeye_engine.fusion.engine_genesis.topography_recon import ImmersiveTopographyEngine
+
 class TGHDeltaEngine:
     def __init__(self):
         self.base_model: Dict[str, Any] = {}
         self.delta_hierarchy: Dict[str, List[Any]] = {}
         self.equilibrium = EquilibriumEngine()
         self.dither3d = Dither3DEngine()
+        self.topography = ImmersiveTopographyEngine()
 
     def update_base_model(self, lat: float, lon: float, full_stack: Dict[str, Any]):
         key = f"{lat:.4f},{lon:.4f}"
@@ -259,6 +262,11 @@ class TGHDeltaEngine:
         last_ts = deltas[-1]['timestamp'] if deltas else base['timestamp']
         ontology = deltas[-1]['ontology'] if deltas else base['ontology']
         
+        # Phase 3.1: Trigger Immersive Topography Reassembly
+        topo_layer = reconstructed.get('terrain.elevation', {})
+        ground_meta = topo_layer.get('ground_meta')
+        reassembly = self.topography.reconstruct_ground(lat, lon, ground_meta)
+        
         return {
             'lat': lat, 'lon': lon,
             'base_timestamp': base['timestamp'].isoformat(),
@@ -266,7 +274,8 @@ class TGHDeltaEngine:
             'sensors': reconstructed,
             'physics_consistency_score': float(avg_score),
             'mode': 'state_estimate',
-            'ontology': ontology
+            'ontology': ontology,
+            'ground_reassembly': reassembly
         }
 
     def get_reconstructed_at_time(self, lat: float, lon: float, target_time: datetime):

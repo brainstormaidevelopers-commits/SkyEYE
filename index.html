@@ -232,6 +232,7 @@
     <div id="ctx-content" class="context-content">Retrieving data...</div>
     <div class="context-actions">
       <button class="brutalist-element action-btn" onclick="document.getElementById('context-card').style.display='none'">[ CLOSE ]</button>
+      <button id="btn-dive" class="brutalist-element action-btn" style="display:none; border-color: #fff; color:#fff;" onclick="triggerImmersiveDive()">[ IMMERSIVE_DIVE ]</button>
       <button class="brutalist-element action-btn" style="color:#fff;" onclick="alert('Export functional hook')">[ EXPORT ]</button>
     </div>
   </div>
@@ -612,6 +613,19 @@
        const isHistorical = data.mode === 'historical_reconstruction';
        const res = s['_neural_res'] ? `<span style="color:#00d2ff">[ SUPER_RES: ACTIVE ]</span>` : '';
        
+       const diveBtn = document.getElementById('btn-dive');
+       const re = data.ground_reassembly;
+        
+       let groundStatus = '';
+       if (re && re.status === 'REASSEMBLED') {
+          groundStatus = `<br><span style="color:#4ade80">[ META_DIVE: READY ]</span>`;
+          diveBtn.style.display = 'block';
+          diveBtn.setAttribute('data-pano', re.pano_id);
+          diveBtn.setAttribute('data-target', JSON.stringify(re.fly_down_params));
+       } else {
+          diveBtn.style.display = 'none';
+       }
+
        document.getElementById('ctx-content').innerHTML = `
           [${isHistorical ? 'HISTORICAL_RECON' : 'OBSERVED_DATA_LINK'}]<br>
           <span style="color:var(--primary)">OPTICAL_STACK:</span> ${s['visual.optical']?.val || '0.00'} [FIDELITY: ${s['visual.optical']?.fidelity_boost || 'BASE'}]<br>
@@ -619,13 +633,45 @@
           <span style="color:#9c88ff">SEISMIC:</span> ${s['hazards.seismic']?.val || 'N/A'}<br>
           <span style="color:#f9ca24">SOLAR_FLARES:</span> ${s['space.solar']?.active_flares || 0}<br>
           <span style="color:#f9ca24">FIREBALLS:</span> ${s['space.meteor']?.recent_fireballs || 0}<br>
-          ${res}
+          ${res}${groundStatus}
           <br>[CONFIDENCE: ${((data.physics_consistency_score || data.physics_consistency || 1.0)*100).toFixed(0)}%]
        `;
        if(isHistorical) {
           document.getElementById('time-display').innerHTML = `<span style="color:var(--accent)">SCRUB: ${new Date(data.scrub_time).toLocaleTimeString()}</span>`;
        }
     }
+
+     async function triggerImmersiveDive() {
+        const btn = document.getElementById('btn-dive');
+        const panoId = btn.getAttribute('data-pano');
+        const params = JSON.parse(btn.getAttribute('data-target'));
+        
+        // 1. Alert Log
+        const feed = document.getElementById('tactical-feed');
+        const toast = document.createElement('div');
+        toast.className = 'alert-toast brutalist-element';
+        toast.style.background = '#4ade80';
+        toast.style.color = '#000';
+        toast.innerHTML = `<strong>[ GENESIS_ENGINE ]</strong> Initializing immersion. Reassembling building meshes via PANO_ID: ${panoId}`;
+        feed.appendChild(toast);
+        setTimeout(() => toast.remove(), 5000);
+
+        // 2. Camera Fly-Down
+        viewer.camera.flyTo({
+           destination: Cesium.Cartesian3.fromDegrees(currentCtx.lon, currentCtx.lat, params.range),
+           orientation: {
+              heading: Cesium.Math.toRadians(params.heading),
+              pitch: Cesium.Math.toRadians(params.pitch),
+              roll: 0.0
+           },
+           duration: 3.0,
+           complete: () => {
+              // Toggle "Walk" Mode visuals
+              document.getElementById('overlay-fx').style.boxShadow = 'inset 0 0 100px #4ade80';
+              document.getElementById('overlay-fx').style.display = 'block';
+           }
+        });
+     }
 
     async function handleScrub(val) {
        const index = parseInt(val);
