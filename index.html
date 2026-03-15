@@ -22,6 +22,24 @@
     body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: var(--bg); overflow: hidden; font-family: var(--font-ui); color: var(--primary); }
     #cesiumContainer { width: 100%; height: 100%; position: absolute; top:0; left:0; z-index: 1; }
     
+    /* Reconstruction Overlay */
+    #overlay-fx {
+      position: absolute; top:0; left:0; width:100%; height:100%;
+      pointer-events: none; z-index: 5;
+      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03));
+      background-size: 100% 3px, 3px 100%;
+      display: none;
+      opacity: 0.4;
+    }
+    .reconstruction-pulse {
+       animation: reconPulse 2s infinite;
+    }
+    @keyframes reconPulse {
+       0% { box-shadow: 0 0 10px var(--primary); }
+       50% { box-shadow: 0 0 30px var(--primary); }
+       100% { box-shadow: 0 0 10px var(--primary); }
+    }
+
     .cesium-viewer-bottom { display: none; }
     .cesium-viewer-toolbar { display: none; } /* Hide default cesium tools to adhere to Frictionless */
 
@@ -124,15 +142,75 @@
       animation: slideIn 0.3s cubic-bezier(0.23, 1, 0.32, 1);
     }
     @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+    /* Persistent HUD */
+    .hud-block {
+      position: absolute;
+      z-index: 100;
+      pointer-events: none;
+      font-family: var(--font-mono);
+      padding: 15px;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(5px);
+      border-left: 4px solid var(--primary);
+      text-transform: uppercase;
+    }
+    #hud-telemetry { top: 40px; left: 40px; width: 260px; }
+    #hud-status { top: 40px; right: 40px; width: 220px; text-align: right; border-left: none; border-right: 4px solid var(--primary); }
+    #hud-legend { bottom: 140px; left: 40px; width: 200px; border-left: 2px solid var(--primary); font-size: 10px; }
+
+    .hud-label { font-size: 10px; color: var(--primary); opacity: 0.7; margin-bottom: 2px; }
+    .hud-value { font-size: 16px; font-weight: 900; color: #fff; margin-bottom: 10px; }
+    .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; background: #4ade80; box-shadow: 0 0 5px #4ade80; }
+    .status-offline { background: #ff6b6b; box-shadow: 0 0 5px #ff6b6b; }
+    
+    .hud-health-strip { display: flex; flex-direction: column; gap: 5px; margin-top: 10px; }
+    .health-item { display: flex; justify-content: space-between; font-size: 9px; align-items: center; }
+    .health-bar { flex: 1; height: 3px; background: rgba(74, 222, 128, 0.2); margin: 0 10px; position: relative; }
+    .health-fill { height: 100%; background: var(--primary); width: 100%; }
   </style>
 </head>
 <body>
+
+  <div id="overlay-fx"></div>
+
+  <!-- HUD LAYER (Persistent Telemetry) -->
+  <div id="hud-telemetry" class="hud-block">
+    <div class="hud-label">COORDINATE_TICKER [LAT/LON/ALT]</div>
+    <div id="hud-coords" class="hud-value">00.0000, 00.0000, 0m</div>
+    
+    <div class="hud-label">TARGET_VECTORS [VEL/HDG/RNG]</div>
+    <div id="hud-vectors" class="hud-value">0 km/h | 0° | 0km</div>
+    
+    <div id="hud-timestamp" class="hud-label" style="opacity:1;">SYNC: NEVER</div>
+  </div>
+
+  <div id="hud-status" class="hud-block">
+    <div class="hud-label">ORCHESTRATOR_STATUS</div>
+    <div class="hud-value"><span class="status-dot" id="engine-dot"></span><span id="engine-status">OFFLINE</span></div>
+    
+    <div class="hud-health-strip" id="sensor-health-strip">
+       <div class="health-item"><span>STAC_CATALOG</span><div class="health-bar"><div class="health-fill"></div></div><span>OK</span></div>
+       <div class="health-item"><span>NASA_DONKI</span><div class="health-bar"><div class="health-fill"></div></div><span>OK</span></div>
+       <div class="health-item"><span>GENESIS_GPU</span><div class="health-bar"><div class="health-fill"></div></div><span>98%</span></div>
+    </div>
+  </div>
+
+  <div id="hud-legend" class="hud-block">
+    <div class="hud-label">SENSORY_LEGEND</div>
+    <div style="margin-top:5px;">
+       <span style="color:#4ade80">■</span> OPTICAL_STACK<br>
+       <span style="color:#ff6b6b">■</span> THERMAL_RECON<br>
+       <span style="color:#9c88ff">■</span> SAR_SYNTHETIC<br>
+       <span style="color:#f9ca24">■</span> SOLAR_FIREBALL
+    </div>
+  </div>
 
   <!-- UI LAYER -->
   <div id="top-search-container">
     <div class="search-wrapper">
       <input type="text" id="omni-search" class="brutalist-element" placeholder="Where do you want to look?" onkeypress="handleSearch(event)">
-      <div class="search-hint">Try: Kyiv, 38.8977° N 77.0365° W, or wildfire California</div>
+      <div class="search-hint">Try: New York, 50.4501° N 30.5234° E, or wildfire California</div>
     </div>
     <div class="account-settings">
       <button class="brutalist-element icon-btn" title="Truth Mode (Analyst)">TRUTH</button>
@@ -169,6 +247,10 @@
       <button class="brutalist-element sensor-btn" id="btn-seismic" onclick="toggleSensor('seismic', this)">⚡ SEISMIC</button>
       <button class="brutalist-element sensor-btn" id="btn-space" onclick="toggleSensor('space', this)">🌌 SPACE</button>
       <button class="brutalist-element sensor-btn" id="btn-geopol" onclick="toggleLabels()">🗺 TAGS</button>
+    </div>
+    <div class="brutalist-element timeline-container" style="margin-left:10px;">
+       <span class="time-label">OPACITY</span>
+       <input type="range" id="opacity-slider" min="0" max="100" value="100" style="width:100px; margin: 0 10px;" oninput="updateOverlayOpacity(this.value)">
     </div>
     <div class="brutalist-element timeline-container">
        <span class="time-label">HISTORICAL</span>
@@ -246,6 +328,11 @@
       });
 
       loadStrategicPins();
+      initHUD();
+      
+      // Start background status loop
+      fetchSysTelemetry();
+      setInterval(fetchSysTelemetry, 5000);
     }
 
     let labelsEnabled = false;
@@ -267,11 +354,107 @@
       }
     }
 
+    let lastHudPos = { lat: 0, lon: 0, alt: 0 };
+    let lastHudTime = Date.now();
+
+    function initHUD() {
+       viewer.clock.onTick.addEventListener(() => {
+          updateHUD();
+       });
+    }
+
+    function updateHUD() {
+       let lat, lon, alt = 0;
+       let targetName = "GROUND_REFERENCE";
+       
+       // Priority: Selected Entity > Camera Center
+       const entity = viewer.selectedEntity;
+       if (entity && entity.position) {
+          targetName = entity.name || "UNIDENTIFIED_TARGET";
+          const pos = entity.position.getValue(viewer.clock.currentTime);
+          if (pos) {
+             const carto = Cesium.Ellipsoid.WGS84.cartesianToCartographic(pos);
+             lat = Cesium.Math.toDegrees(carto.latitude);
+             lon = Cesium.Math.toDegrees(carto.longitude);
+             alt = carto.height;
+          }
+       } else {
+          // Camera Center (Raycast to ground)
+          const windowCenter = new Cesium.Cartesian2(viewer.container.clientWidth / 2, viewer.container.clientHeight / 2);
+          const ray = viewer.camera.getPickRay(windowCenter);
+          const pos = viewer.scene.globe.pick(ray, viewer.scene);
+          if (pos) {
+             const carto = Cesium.Ellipsoid.WGS84.cartesianToCartographic(pos);
+             lat = Cesium.Math.toDegrees(carto.latitude);
+             lon = Cesium.Math.toDegrees(carto.longitude);
+             alt = carto.height;
+          }
+       }
+
+       if (lat !== undefined && lon !== undefined) {
+          // Update Coordinate Ticker
+          document.getElementById('hud-coords').innerText = `${lat.toFixed(6)}°, ${lon.toFixed(6)}°, ${alt.toFixed(0)}m`;
+          
+          // Update Target Vector Block
+          const now = Date.now();
+          const dt = (now - lastHudTime) / 1000;
+          if (dt > 0.1) {
+             const dist = calculateDistance(lastHudPos.lat, lastHudPos.lon, lat, lon);
+             const vel = (dist / dt) * 3600; // km/h
+             const hdg = calculateHeading(lastHudPos.lat, lastHudPos.lon, lat, lon);
+             
+             document.getElementById('hud-vectors').innerHTML = `
+                <span style="color:var(--primary)">ID:</span> ${targetName}<br>
+                ${vel.toFixed(1)} km/h | ${hdg.toFixed(0)}° | ${((alt / 1000)).toFixed(2)}km
+             `;
+             
+             lastHudPos = { lat, lon, alt };
+             lastHudTime = now;
+          }
+          
+          document.getElementById('hud-timestamp').innerText = `SYNC: ${new Date().toLocaleTimeString()} [LIVE]`;
+       }
+    }
+
+    function calculateDistance(lat1, lon1, lat2, lon2) {
+       const R = 6371; // km
+       const dLat = (lat2 - lat1) * Math.PI / 180;
+       const dLon = (lon2 - lon1) * Math.PI / 180;
+       const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                 Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                 Math.sin(dLon/2) * Math.sin(dLon/2);
+       const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+       return R * c;
+    }
+
+    function calculateHeading(lat1, lon1, lat2, lon2) {
+       const y = Math.sin((lon2-lon1) * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180);
+       const x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180) -
+                 Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos((lon2-lon1) * Math.PI / 180);
+       let brng = Math.atan2(y, x) * 180 / Math.PI;
+       return (brng + 360) % 360;
+    }
+
     async function handleSearch(e) {
       if (e.key === 'Enter') {
-        const query = e.target.value;
+        const query = e.target.value.trim();
         if(!query) return;
         
+        // 1. Check if input is a coordinate pair (e.g. "38.8977, -77.0365")
+        const coordRegex = /^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/;
+        const match = query.match(coordRegex);
+        
+        if (match) {
+           const lat = parseFloat(match[1]);
+           const lon = parseFloat(match[2]);
+           viewer.camera.flyTo({
+              destination: Cesium.Cartesian3.fromDegrees(lon, lat, 15000),
+              duration: 2.5
+           });
+           setTimeout(() => showContextCard("GEOSPATIAL_PROBE", lat, lon), 2600);
+           return;
+        }
+
         try {
           const geocoder = new Cesium.IonGeocoderService();
           const results = await geocoder.geocode(query);
@@ -281,12 +464,18 @@
               destination: dest,
               duration: 2.5
             });
-            // Show a mock context card for the searched location
             setTimeout(() => {
-               const carto = Cesium.Cartographic.fromCartesian(Cesium.Rectangle.center(dest));
-               if(!carto) return;
-               const lat = Cesium.Math.toDegrees(carto.latitude);
-               const lon = Cesium.Math.toDegrees(carto.longitude);
+               let lat, lon;
+               if (dest instanceof Cesium.Rectangle) {
+                  const carto = Cesium.Rectangle.center(dest);
+                  lat = Cesium.Math.toDegrees(carto.latitude);
+                  lon = Cesium.Math.toDegrees(carto.longitude);
+               } else {
+                  // Cartesian3
+                  const carto = Cesium.Ellipsoid.WGS84.cartesianToCartographic(dest);
+                  lat = Cesium.Math.toDegrees(carto.latitude);
+                  lon = Cesium.Math.toDegrees(carto.longitude);
+               }
                showContextCard(query.toUpperCase(), lat, lon);
             }, 2600);
           }
@@ -306,11 +495,24 @@
       card.style.display = 'block';
 
       try {
-        // Fetch Reconstruction
-        const response = await fetch(`${SKYEYE_CONFIG.API_BASE}/reconstruct?lat=${lat}&lon=${lon}`);
-        const data = await response.json();
+        // 1. Fetch Reconstruction
+        let response = await fetch(`${SKYEYE_CONFIG.API_BASE}/reconstruct?lat=${lat}&lon=${lon}`);
+        let data = await response.json();
         
-        // Fetch History Bounds
+        // 2. AUTO-PROBE: If no baseline, trigger the orchestrator immediately
+        if (data.error) {
+           document.getElementById('ctx-content').innerHTML = `<span style="color:var(--primary)">[ INITIATING_SENSOR_STACK_PROBE ]</span>`;
+           const probeRes = await fetch(`${SKYEYE_CONFIG.API_BASE}/probe`, {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({ lat, lon })
+           });
+           // Re-fetch now that we have a delta
+           response = await fetch(`${SKYEYE_CONFIG.API_BASE}/reconstruct?lat=${lat}&lon=${lon}`);
+           data = await response.json();
+        }
+
+        // 3. Fetch History Bounds
         const hResp = await fetch(`${SKYEYE_CONFIG.API_BASE}/history-bounds?lat=${lat}&lon=${lon}`);
         const hData = await hResp.json();
         const slider = document.getElementById('time-slider');
@@ -330,9 +532,11 @@
            document.getElementById('ctx-content').innerHTML = `No reconstructed baseline found.<br><br>Wait for AI dispatch probe or manually INITIATE SENSE.`;
         } else {
            updateContextUI(data);
+           applyReconstructionVisuals(data);
         }
       } catch(e) {
         document.getElementById('ctx-content').innerHTML = `UPLINK_OFFLINE`;
+        console.error(e);
       }
     }
 
@@ -380,6 +584,89 @@
        handleScrub(slider.value);
     }
 
+    let topoEntity = null;
+    function applyReconstructionVisuals(data) {
+       const s = data.sensors;
+       const s_res = s['_neural_res'];
+       const topo = s['terrain.elevation'];
+
+       // 1. Visually "mark" the topography reconstruction zone
+       if (topoEntity) viewer.entities.remove(topoEntity);
+       
+       // Create a 1km Tactical Grid at location
+       topoEntity = viewer.entities.add({
+          rectangle: {
+             coordinates: Cesium.Rectangle.fromDegrees(data.lon - 0.005, data.lat - 0.005, data.lon + 0.005, data.lat + 0.005),
+             material: new Cesium.GridMaterialProperty({
+                color: Cesium.Color.fromCssColorString('#4ade80').withAlpha(0.2),
+                cellAlpha: 0.1,
+                lineCount: new Cesium.Cartesian2(10, 10),
+                thickness: 1.0
+             }),
+             outline: true,
+             outlineColor: Cesium.Color.fromCssColorString('#4ade80'),
+          },
+          name: 'SYNTHETIC_REASSEMBLY_ZONE'
+       });
+
+       if (topo && topo.ground_fidelity === 'AVAILABLE') {
+          // Add core cube for ground-level metadata
+          viewer.entities.add({
+             position: Cesium.Cartesian3.fromDegrees(data.lon, data.lat, 25),
+             box: {
+                dimensions: new Cesium.Cartesian3(50, 50, 50),
+                material: Cesium.Color.fromCssColorString('#4ade80').withAlpha(0.4),
+                outline: true,
+                outlineColor: Cesium.Color.fromCssColorString('#4ade80'),
+             }
+          });
+       }
+
+       // 2. Synthetic Super-Resolution Bloom (Doctrine v2)
+       if (s_res) {
+          const stages = viewer.scene.postProcessStages;
+          const bloom = Cesium.PostProcessStageLibrary.createBloomStage();
+          bloom.enabled = true;
+          stages.add(bloom);
+          setTimeout(() => stages.remove(bloom), 2000); // Pulse effect
+       }
+
+       // 3. System-Wide Rendering State (The "Not Google Earth" indicator)
+       const fx = document.getElementById('overlay-fx');
+       const card = document.getElementById('context-card');
+       
+       if (data.mode === 'historical_reconstruction' || data.mode === 'state_estimate') {
+          fx.style.display = 'block';
+          card.classList.add('reconstruction-pulse');
+       } else {
+          fx.style.display = 'none';
+          card.classList.remove('reconstruction-pulse');
+       }
+
+       // 4. Coordinate Sync Toast
+       if (data.lat && data.lon) {
+          console.log(`[TGH] Synchronized spatial baseline for ${data.lat}, ${data.lon}`);
+       }
+    }
+
+    function updateOverlayOpacity(val) {
+       const alpha = val / 100;
+       const stages = viewer.scene.postProcessStages;
+       Object.keys(activeOverlays).forEach(k => {
+          const o = activeOverlays[k];
+          if(o.isPostProcess) {
+             // Cesium post-process stages don't have a direct alpha, 
+             // but we can scale effects if they support it. 
+             // For simplicity, we'll focus on imagery layers for now.
+          } else {
+             o.asset.alpha = alpha;
+          }
+       });
+       // Also handle the global overlay FX
+       const fx = document.getElementById('overlay-fx');
+       fx.style.opacity = alpha * 0.4;
+    }
+
     async function toggleSensor(mode, btn) {
       // Manage active states
       if (activeSensorBtn) activeSensorBtn.classList.remove('active');
@@ -408,14 +695,21 @@
       }
       else if(mode === 'thermal') {
         themeColor = '#ff6b6b';
+        // Thermal Reassembly: BW + Sharpen
         newAsset = Cesium.PostProcessStageLibrary.createBlackAndWhiteStage();
-        newAsset.uniforms.gradations = 10.0;
+        newAsset.uniforms.gradations = 5.0;
         stages.add(newAsset);
         isPostProcess = true;
       }
       else if(mode === 'radar') {
-        themeColor = '#00d2ff';
-        newAsset = Cesium.PostProcessStageLibrary.createNightVisionStage();
+        themeColor = '#9c88ff';
+        // SAR (Synthetic Aperture Radar): NightVision + High Res Edges
+        const nv = Cesium.PostProcessStageLibrary.createNightVisionStage();
+        const edges = Cesium.PostProcessStageLibrary.createEdgeDetectionStage();
+        newAsset = new Cesium.PostProcessStageComposite({
+            stages: [nv, edges],
+            name: 'sar_recon'
+        });
         stages.add(newAsset);
         isPostProcess = true;
       }
@@ -427,21 +721,23 @@
           style : 'default', format : 'image/png', tileMatrixSetID : '250m', maximumLevel: 5
         });
         newAsset = layers.addImageryProvider(provider);
-        newAsset.alpha = 0.5;
       }
       else if(mode === 'space') {
         themeColor = '#f9ca24'; 
-        // Invert for space contrast
-        newAsset = Cesium.PostProcessStageLibrary.createInvertStage();
+        const invert = Cesium.PostProcessStageLibrary.createInvertStage();
+        const bloom = Cesium.PostProcessStageLibrary.createBloomStage();
+        newAsset = new Cesium.PostProcessStageComposite({
+            stages: [invert, bloom],
+            name: 'space_recon'
+        });
         stages.add(newAsset);
         isPostProcess = true;
       }
       else if(mode === 'seismic') {
         themeColor = '#a55eea';
-        const stage = Cesium.PostProcessStageLibrary.createEdgeDetectionStage();
-        stages.add(stage);
+        newAsset = Cesium.PostProcessStageLibrary.createEdgeDetectionStage();
+        stages.add(newAsset);
         isPostProcess = true;
-        newAsset = stage;
       }
 
       if (newAsset) {
@@ -470,7 +766,29 @@
             id: entityId,
             name: pin.title,
             position: Cesium.Cartesian3.fromDegrees(pin.lon, pin.lat),
-            point: { pixelSize: 15, color: color, outlineColor: Cesium.Color.BLACK, outlineWidth: 3 },
+            point: { pixelSize: 10, color: color, outlineColor: Cesium.Color.BLACK, outlineWidth: 2 },
+            label: {
+               text: pin.title,
+               font: '10px Space Mono',
+               style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+               outlineWidth: 2,
+               verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+               pixelOffset: new Cesium.Cartesian2(0, -15),
+               fillColor: Cesium.Color.fromCssColorString('#4ade80'),
+               showBackground: true,
+               backgroundColor: new Cesium.Color(0, 0, 0, 0.7),
+               distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 5000000)
+            },
+            path: {
+               resolution: 1,
+               material: new Cesium.PolylineGlowMaterialProperty({
+                  glowPower: 0.1,
+                  color: Cesium.Color.fromCssColorString('#4ade80')
+               }),
+               width: 5,
+               leadTime: 0,
+               trailTime: 1000
+            },
             description: pin.description
           });
         });
@@ -543,22 +861,35 @@
        }
     }
 
-    function updateSysUI(data) {
-       document.getElementById('sys-content').innerHTML = `
-         <div style="margin-bottom:10px;">
-           [VRAM_ALLOCATION]<br>
-           <span style="color:var(--primary)">CAPACITY:</span> ${data.gpu_pool.capacity} CORES<br>
-           <span style="color:${data.gpu_pool.active_jobs > 0 ? '#ff6b6b' : 'var(--primary)'}">ACTIVE:</span> ${data.gpu_pool.active_jobs}<br>
-         </div>
-         <div style="margin-bottom:10px;">
-           [DISPATCH_QUEUES]<br>
-           <span style="color:#ff6b6b">IMMEDIATE:</span> ${data.queues.immediate}<br>
-           <span style="color:#feca57">NORMAL:</span> ${data.queues.normal}<br>
-           <span style="color:var(--primary)">LOW:</span> ${data.queues.low}
-         </div>
-         <div>[TRACKED_EVENTS] ${data.active_events}</div>
-       `;
-    }
+     function updateSysUI(data) {
+        // Update HUD Status
+        const engineDot = document.getElementById('engine-dot');
+        const engineStatus = document.getElementById('engine-status');
+        if (data) {
+           engineDot.classList.remove('status-offline');
+           engineStatus.innerText = "ONLINE_PROXIED";
+           engineStatus.style.color = "var(--primary)";
+        } else {
+           engineDot.classList.add('status-offline');
+           engineStatus.innerText = "OFFLINE";
+           engineStatus.style.color = "#ff6b6b";
+        }
+
+        document.getElementById('sys-content').innerHTML = `
+          <div style="margin-bottom:10px;">
+            [VRAM_ALLOCATION]<br>
+            <span style="color:var(--primary)">CAPACITY:</span> ${data.gpu_pool.capacity} CORES<br>
+            <span style="color:${data.gpu_pool.active_jobs > 0 ? '#ff6b6b' : 'var(--primary)'}">ACTIVE:</span> ${data.gpu_pool.active_jobs}<br>
+          </div>
+          <div style="margin-bottom:10px;">
+            [DISPATCH_QUEUES]<br>
+            <span style="color:#ff6b6b">IMMEDIATE:</span> ${data.queues.immediate}<br>
+            <span style="color:#feca57">NORMAL:</span> ${data.queues.normal}<br>
+            <span style="color:var(--primary)">LOW:</span> ${data.queues.low}
+          </div>
+          <div>[TRACKED_EVENTS] ${data.active_events}</div>
+        `;
+     }
 
     function initSocket() {
        socket = io(SKYEYE_CONFIG.API_BASE);
