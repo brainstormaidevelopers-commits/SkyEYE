@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SkyEye // Frictionless Earth</title>
+  <script src="https://cesium.com/downloads/cesiumjs/releases/1.110/Build/Cesium/Cesium.js"></script>
+  <link href="https://cesium.com/downloads/cesiumjs/releases/1.110/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@400;700;900&display=swap');
+
+    :root {
+      --primary: #4ade80;
+      --bg: #000;
+      --surface: #0a0a0a;
+      --border-color: #4ade80;
+      --font-mono: 'Space Mono', monospace;
+      --font-ui: 'Inter', sans-serif;
+      --shadow-offset: 4px;
+    }
+
+    body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: var(--bg); overflow: hidden; font-family: var(--font-ui); color: var(--primary); }
+    #cesiumContainer { width: 100%; height: 100%; position: absolute; top:0; left:0; z-index: 1; }
+    
+    .cesium-viewer-bottom { display: none; }
+    .cesium-viewer-toolbar { display: none; } /* Hide default cesium tools to adhere to Frictionless */
+
+    /* Neo-Brutalist Global */
+    * { box-sizing: border-box; }
+    .brutalist-element {
+      background: var(--surface);
+      border: 2px solid var(--border-color);
+      box-shadow: var(--shadow-offset) var(--shadow-offset) 0 var(--border-color);
+      color: var(--primary);
+    }
+
+    /* Top Search Bar */
+    #top-search-container {
+      position: absolute; top: 40px; left: 50%; transform: translateX(-50%);
+      z-index: 10; width: 600px; display: flex; gap: 20px;
+    }
+
+    .search-wrapper { flex: 1; display: flex; flex-direction: column; }
+    #omni-search {
+      width: 100%; padding: 15px 20px; font-family: var(--font-mono); font-size: 16px;
+      font-weight: 700; background: var(--surface); border: 2px solid var(--border-color);
+      color: #fff; box-shadow: var(--shadow-offset) var(--shadow-offset) 0 var(--border-color);
+      outline: none; transition: all 0.2s;
+    }
+    #omni-search:focus {
+      background: #000; transform: translate(-2px, -2px);
+      box-shadow: calc(var(--shadow-offset) + 2px) calc(var(--shadow-offset) + 2px) 0 var(--border-color);
+    }
+    #omni-search::placeholder { color: rgba(74, 222, 128, 0.5); }
+    .search-hint { font-size: 11px; margin-top: 8px; font-family: var(--font-mono); opacity: 0.8; letter-spacing: 0.5px;text-align:center; color: #fff;}
+
+    .account-settings { display: flex; gap: 10px; }
+    .icon-btn {
+      width: 58px; height: 58px; cursor: pointer; font-size: 20px;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.2s; font-family: var(--font-mono); font-weight: bold;
+    }
+    .icon-btn:hover { background: var(--primary); color: #000; transform: translate(-2px, -2px); box-shadow: calc(var(--shadow-offset) + 2px) calc(var(--shadow-offset) + 2px) 0 var(--border-color);}
+
+    /* Bottom Sensor Strip */
+    #bottom-sensor-strip {
+      position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
+      z-index: 10; display: flex; flex-direction: column; gap: 15px; width: 800px;
+      align-items: center;
+    }
+
+    .sensor-buttons { display: flex; gap: 10px; }
+    
+    .sensor-btn {
+      padding: 12px 20px; font-family: var(--font-mono); font-size: 14px; font-weight: 700;
+      cursor: pointer; text-transform: uppercase; transition: all 0.1s;
+    }
+    
+    .sensor-btn:hover { background: rgba(74, 222, 128, 0.2); }
+    .sensor-btn.active {
+      background: var(--primary); color: #000;
+      transform: translate(2px, 2px); box-shadow: 0 0 0 var(--border-color);
+    }
+
+    /* Timeline Scrubber */
+    .timeline-container { width: 100%; display: flex; gap: 15px; align-items: center; padding: 10px 20px; }
+    .timeline-scrubber { flex: 1; display: flex; align-items: center; gap: 15px; }
+    .time-step { background: transparent; border: none; color: var(--primary); font-size: 18px; cursor: pointer; font-family:var(--font-mono); font-weight: bold;}
+    .time-step:hover { color: #fff; }
+    #time-slider {
+      -webkit-appearance: none; appearance: none; width: 100%; background: transparent; height: 6px; border: 2px solid var(--primary); margin: 0;
+    }
+    #time-slider::-webkit-slider-thumb {
+      -webkit-appearance: none; height: 20px; width: 20px; background: var(--primary); cursor: pointer; border-radius: 0; box-shadow: 2px 2px 0 var(--border-color);
+    }
+    .time-label { font-family: var(--font-mono); font-size: 12px; font-weight: 700; color:#fff;}
+
+    /* Context Card */
+    #context-card {
+      position: absolute; top: 120px; right: 40px; z-index: 10; width: 340px;
+      display: none; padding: 20px;
+    }
+    .context-header { font-weight: 900; font-size: 20px; margin-bottom: 5px; color:#fff; text-transform: uppercase; letter-spacing: -0.5px;}
+    .context-meta { font-family: var(--font-mono); font-size: 11px; color: var(--primary); margin-bottom: 20px; }
+    .context-content { font-size: 13px; line-height: 1.6; color: #ddd; margin-bottom: 20px; font-family: var(--font-mono);}
+    .context-actions { display: flex; gap: 10px;}
+    .action-btn { flex: 1; padding: 10px; font-family:var(--font-mono); font-size: 11px; font-weight: bold; cursor:pointer;}
+    .action-btn:hover { background: var(--primary); color: #000; }
+
+    /* Telemetry Modal */
+    #sys-modal {
+      position: absolute; top: 120px; left: 40px; z-index: 10; width: 320px;
+      display: none; padding: 20px;
+    }
+
+    /* Tactical Alert Feed */
+    #tactical-feed {
+      position: absolute; bottom: 140px; right: 40px; z-index: 20;
+      display: flex; flex-direction: column; gap: 10px; align-items: flex-end;
+      pointer-events: none;
+    }
+    .alert-toast {
+      padding: 15px; width: 300px; pointer-events: auto;
+      animation: slideIn 0.3s cubic-bezier(0.23, 1, 0.32, 1);
+    }
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+  </style>
+</head>
+<body>
+
+  <!-- UI LAYER -->
+  <div id="top-search-container">
+    <div class="search-wrapper">
+      <input type="text" id="omni-search" class="brutalist-element" placeholder="Where do you want to look?" onkeypress="handleSearch(event)">
+      <div class="search-hint">Try: Kyiv, 38.8977° N 77.0365° W, or wildfire California</div>
+    </div>
+    <div class="account-settings">
+      <button class="brutalist-element icon-btn" title="Truth Mode (Analyst)">TRUTH</button>
+      <button class="brutalist-element icon-btn" title="System Status" onclick="toggleSysModal()">SYS</button>
+    </div>
+  </div>
+
+  <div id="sys-modal" class="brutalist-element">
+    <div class="context-header">ORCHESTRATION UPLINK</div>
+    <div class="context-meta">0CORE AGENT GPU PIPELINE</div>
+    <div id="sys-content" class="context-content">
+      Connecting to local orchestration engine...
+    </div>
+  </div>
+
+  <div id="context-card" class="brutalist-element">
+    <div class="context-header" id="ctx-title">Location context</div>
+    <div class="context-meta" id="ctx-meta">Last observation: N/A</div>
+    <div id="ctx-content" class="context-content">Retrieving data...</div>
+    <div class="context-actions">
+      <button class="brutalist-element action-btn" onclick="document.getElementById('context-card').style.display='none'">[ CLOSE ]</button>
+      <button class="brutalist-element action-btn" style="color:#fff;" onclick="alert('Export functional hook')">[ EXPORT ]</button>
+    </div>
+  </div>
+
+  <div id="tactical-feed"></div>
+
+  <div id="bottom-sensor-strip">
+    <div class="sensor-buttons">
+      <button class="brutalist-element sensor-btn active" id="btn-vision" onclick="toggleSensor('vision', this)">👁 VISION</button>
+      <button class="brutalist-element sensor-btn" id="btn-thermal" onclick="toggleSensor('thermal', this)">🔥 THERMAL</button>
+      <button class="brutalist-element sensor-btn" id="btn-radar" onclick="toggleSensor('radar', this)">📡 SAR</button>
+      <button class="brutalist-element sensor-btn" id="btn-chemical" onclick="toggleSensor('chemical', this)">🧪 CHEM</button>
+      <button class="brutalist-element sensor-btn" id="btn-seismic" onclick="toggleSensor('seismic', this)">⚡ SEISMIC</button>
+    </div>
+    <div class="brutalist-element timeline-container">
+       <span class="time-label">HISTORICAL</span>
+       <div class="timeline-scrubber">
+         <button class="time-step" onclick="stepTimeline(-1)">◀</button>
+         <input type="range" id="time-slider" min="0" max="0" value="0" oninput="handleScrub(this.value)">
+         <button class="time-step" onclick="stepTimeline(1)">▶</button>
+       </div>
+       <span class="time-label" id="time-display">LIVE_PULSE</span>
+    </div>
+  </div>
+
+  <div id="cesiumContainer"></div>
+
+  <script>
+    Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJjOTVhZGI5Zi0wMTYzLTQ2MWEtYTBjYS02OTc5ZGNkNTY3ZDMiLCJpZCI6NTcwNzEsImlhdCI6MTc2MjQ3OTkyNH0.1bx7V2IFDE_Id5uqrQx-pJvRlzH34NDa2zc8vDY-Y0w';
+    let viewer;
+    
+    (async () => {
+      try {
+        const terrain = await Cesium.createWorldTerrainAsync();
+        viewer = new Cesium.Viewer('cesiumContainer', {
+          terrainProvider: terrain,
+          baseLayerPicker: false, geocoder: false, homeButton: false, sceneModePicker: false,
+          navigationHelpButton: false, animation: false, timeline: false, fullscreenButton: false,
+          infoBox: false, selectionIndicator: false
+        });
+        initApp();
+      } catch(e) {
+        viewer = new Cesium.Viewer('cesiumContainer', {
+          baseLayerPicker: false, geocoder: false, homeButton: false, sceneModePicker: false,
+          navigationHelpButton: false, animation: false, timeline: false, fullscreenButton: false,
+          infoBox: false, selectionIndicator: false
+        });
+        initApp();
+      }
+    })();
+
+    const activeOverlays = {};
+    let activeSensorBtn = null;
+    let sysInterval = null;
+    let currentCtx = { lat: 0, lon: 0 };
+    let seenLogs = new Set();
+
+    function initApp() {
+      activeSensorBtn = document.getElementById('btn-vision');
+
+      // Timeline Scrubber Initialization
+      const slider = document.getElementById('time-slider');
+      slider.disabled = true;
+
+      // Start Feed Polling
+      setInterval(pollTacticalLogs, 3000);
+      setInterval(loadStrategicPins, 10000);
+
+      // Hook up Cesium Entity Clicks to Context Card
+      viewer.selectedEntityChanged.addEventListener((entity) => {
+        if (entity) {
+           const pos = entity.position ? entity.position.getValue(viewer.clock.currentTime) : null;
+           if(pos) {
+              const carto = Cesium.Ellipsoid.WGS84.cartesianToCartographic(pos);
+              const lat = Cesium.Math.toDegrees(carto.latitude);
+              const lon = Cesium.Math.toDegrees(carto.longitude);
+              showContextCard(entity.name || "Strategic Pin", lat, lon);
+           }
+        }
+      });
+
+      loadStrategicPins();
+    }
+
+    async function handleSearch(e) {
+      if (e.key === 'Enter') {
+        const query = e.target.value;
+        if(!query) return;
+        
+        try {
+          const geocoder = new Cesium.IonGeocoderService();
+          const results = await geocoder.geocode(query);
+          if (results && results.length > 0) {
+            const dest = results[0].destination;
+            viewer.camera.flyTo({
+              destination: dest,
+              duration: 2.5
+            });
+            // Show a mock context card for the searched location
+            setTimeout(() => {
+               const carto = Cesium.Cartographic.fromCartesian(Cesium.Rectangle.center(dest));
+               if(!carto) return;
+               const lat = Cesium.Math.toDegrees(carto.latitude);
+               const lon = Cesium.Math.toDegrees(carto.longitude);
+               showContextCard(query.toUpperCase(), lat, lon);
+            }, 2600);
+          }
+        } catch(err) {
+          console.error("Geocode failed", err);
+        }
+      }
+    }
+
+    async function showContextCard(title, lat, lon) {
+      const card = document.getElementById('context-card');
+      currentCtx = { lat, lon };
+      
+      document.getElementById('ctx-title').innerText = title;
+      document.getElementById('ctx-meta').innerHTML = `COORDS: ${lat.toFixed(4)}°, ${lon.toFixed(4)}°`;
+      document.getElementById('ctx-content').innerHTML = `Querying orchestration engine telemetry...`;
+      card.style.display = 'block';
+
+      try {
+        // Fetch Reconstruction
+        const response = await fetch(`http://localhost:5050/reconstruct?lat=${lat}&lon=${lon}`);
+        const data = await response.json();
+        
+        // Fetch History Bounds
+        const hResp = await fetch(`http://localhost:5050/history-bounds?lat=${lat}&lon=${lon}`);
+        const hData = await hResp.json();
+        const slider = document.getElementById('time-slider');
+        
+        if (!hData.error && hData.count > 0) {
+           slider.disabled = false;
+           slider.max = hData.count;
+           slider.value = hData.count;
+           document.getElementById('time-display').innerText = "LIVE_PULSE";
+        } else {
+           slider.disabled = true;
+           slider.value = 0;
+           document.getElementById('time-display').innerText = "NO_HISTORY";
+        }
+
+        if (data.error) {
+           document.getElementById('ctx-content').innerHTML = `No reconstructed baseline found.<br><br>Wait for AI dispatch probe or manually INITIATE SENSE.`;
+        } else {
+           updateContextUI(data);
+        }
+      } catch(e) {
+        document.getElementById('ctx-content').innerHTML = `UPLINK_OFFLINE`;
+      }
+    }
+
+    function updateContextUI(data) {
+       const s = data.sensors;
+       const isHistorical = data.mode === 'historical_reconstruction';
+       document.getElementById('ctx-content').innerHTML = `
+          [${isHistorical ? 'HISTORICAL_RECON' : 'OBSERVED_DATA_LINK'}]<br>
+          <span style="color:var(--primary)">OPTICAL:</span> ${s['visual.optical']?.val || '0.00'}<br>
+          <span style="color:#ff6b6b">THERMAL:</span> ${s['thermal.land_surface']?.val || '0.00'}°C<br>
+          <span style="color:#9c88ff">SEISMIC:</span> ${s['hazards.seismic']?.val || 'N/A'}<br>
+          <br>[CONFIDENCE: ${((data.physics_consistency_score || data.physics_consistency || 1.0)*100).toFixed(0)}%]
+       `;
+       if(isHistorical) {
+          document.getElementById('time-display').innerHTML = `<span style="color:var(--accent)">SCRUB: ${new Date(data.scrub_time).toLocaleTimeString()}</span>`;
+       }
+    }
+
+    async function handleScrub(val) {
+       const index = parseInt(val);
+       const slider = document.getElementById('time-slider');
+       
+       if(index === parseInt(slider.max)) {
+          // Back to live
+          showContextCard(document.getElementById('ctx-title').innerText, currentCtx.lat, currentCtx.lon);
+          return;
+       }
+
+       try {
+          const res = await fetch(`http://localhost:5050/history?lat=${currentCtx.lat}&lon=${currentCtx.lon}&index=${index}`);
+          const data = await res.json();
+          updateContextUI(data);
+       } catch(e) {}
+    }
+
+    function stepTimeline(dir) {
+       const slider = document.getElementById('time-slider');
+       if(slider.disabled) return;
+       slider.value = parseInt(slider.value) + dir;
+       handleScrub(slider.value);
+    }
+
+    async function toggleSensor(mode, btn) {
+      // Manage active states
+      if (activeSensorBtn) activeSensorBtn.classList.remove('active');
+      btn.classList.add('active');
+      activeSensorBtn = btn;
+
+      const layers = viewer.imageryLayers;
+      const stages = viewer.scene.postProcessStages;
+      
+      // Clear old overlays
+      Object.keys(activeOverlays).forEach(k => {
+         const o = activeOverlays[k];
+         if(o.isPostProcess) stages.remove(o.asset);
+         else layers.remove(o.asset);
+         delete activeOverlays[k];
+      });
+
+      let newAsset = null;
+      let isPostProcess = false;
+
+      // Color themes depending on sensor
+      let themeColor = '#4ade80'; // Vision default
+
+      if(mode === 'vision') {
+        themeColor = '#4ade80';
+      }
+      else if(mode === 'thermal') {
+        themeColor = '#ff6b6b';
+        newAsset = Cesium.PostProcessStageLibrary.createBlackAndWhiteStage();
+        newAsset.uniforms.gradations = 10.0;
+        stages.add(newAsset);
+        isPostProcess = true;
+      }
+      else if(mode === 'radar') {
+        themeColor = '#00d2ff';
+        newAsset = Cesium.PostProcessStageLibrary.createNightVisionStage();
+        stages.add(newAsset);
+        isPostProcess = true;
+      }
+      else if(mode === 'chemical') {
+        themeColor = '#feca57';
+        const provider = new Cesium.WebMapTileServiceImageryProvider({
+          url : 'https://gibs.earthdata.nasa.gov/wmts/epsg4326/best/Aerosol_Optical_Depth_Terra_MODIS/default/default/250m/{TileMatrix}/{TileRow}/{TileCol}.png',
+          layer : 'Aerosol_Optical_Depth_Terra_MODIS',
+          style : 'default', format : 'image/png', tileMatrixSetID : '250m', maximumLevel: 5
+        });
+        newAsset = layers.addImageryProvider(provider);
+        newAsset.alpha = 0.5;
+      }
+      else if(mode === 'seismic') {
+        themeColor = '#a55eea';
+        const stage = Cesium.PostProcessStageLibrary.createEdgeDetectionStage();
+        stages.add(stage);
+        isPostProcess = true;
+        newAsset = stage;
+      }
+
+      if (newAsset) {
+        activeOverlays[mode] = { asset: newAsset, isPostProcess };
+      }
+      
+      // Update the entire UI theme color to match the sensor implicitly
+      document.documentElement.style.setProperty('--primary', themeColor);
+      document.documentElement.style.setProperty('--border-color', themeColor);
+    }
+
+    async function loadStrategicPins() {
+      try {
+        const response = await fetch('http://localhost:5050/news-pins');
+        const pins = await response.json();
+        
+        pins.forEach(pin => {
+          const entityId = `pin-${pin.id || pin.lat + pin.lon}`;
+          if (viewer.entities.getById(entityId)) return;
+
+          let color = Cesium.Color.RED;
+          if (pin.title.includes("M")) color = Cesium.Color.fromCssColorString('#a55eea'); // Seismic
+          else if (pin.title.includes("Storm")) color = Cesium.Color.fromCssColorString('#00d2ff'); // Weather
+          
+          viewer.entities.add({
+            id: entityId,
+            name: pin.title,
+            position: Cesium.Cartesian3.fromDegrees(pin.lon, pin.lat),
+            point: { pixelSize: 15, color: color, outlineColor: Cesium.Color.BLACK, outlineWidth: 3 },
+            description: pin.description
+          });
+        });
+      } catch (e) {}
+    }
+
+    async function pollTacticalLogs() {
+      try {
+        const res = await fetch('http://localhost:5050/event-logs');
+        const logs = await res.json();
+        const feed = document.getElementById('tactical-feed');
+
+        logs.forEach(log => {
+          const logId = log.timestamp + log.message;
+          if (seenLogs.has(logId)) return;
+          seenLogs.add(logId);
+
+          // Create Toast
+          const toast = document.createElement('div');
+          toast.className = 'brutalist-element alert-toast';
+          
+          let color = 'white';
+          if(log.category === 'geoloc') color = 'var(--primary)';
+          if(log.category === 'detection') color = '#ff6b6b';
+
+          toast.innerHTML = `
+            <div style="font-size:10px; font-family:var(--font-mono); opacity:0.6; margin-bottom:5px;">[ALERT // ${log.category.toUpperCase()}]</div>
+            <div style="font-size:12px; font-weight:700; color:${color}; margin-bottom:12px;">${log.message}</div>
+            <div style="display:flex; gap:10px;">
+              <button class="brutalist-element action-btn" style="padding:5px;" onclick="toastFlyTo(${log.data?.lat}, ${log.data?.lon}, '${log.data?.title || 'Tactical Interest'}')">[ FLY_TO ]</button>
+              <button class="brutalist-element action-btn" style="padding:5px; opacity:0.6;" onclick="this.parentElement.parentElement.remove()">[ DISMISS ]</button>
+            </div>
+          `;
+          feed.prepend(toast);
+          
+          // Auto-remove after 10s
+          setTimeout(() => { if(toast.parentElement) toast.remove(); }, 10000);
+        });
+      } catch(e) {}
+    }
+
+    function toastFlyTo(lat, lon, title) {
+      if(!lat || !lon) return;
+      viewer.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(lon, lat, 5000),
+        duration: 2.0
+      });
+      setTimeout(() => showContextCard(title.toUpperCase(), lat, lon), 2100);
+    }
+
+    function toggleSysModal() {
+      const modal = document.getElementById('sys-modal');
+      if(modal.style.display === 'block') {
+         modal.style.display = 'none';
+         if(sysInterval) clearInterval(sysInterval);
+      } else {
+         modal.style.display = 'block';
+         fetchSysTelemetry();
+         sysInterval = setInterval(fetchSysTelemetry, 2000);
+      }
+    }
+
+    async function fetchSysTelemetry() {
+       try {
+          const res = await fetch('http://localhost:5050/agent-uplink');
+          const data = await res.json();
+          document.getElementById('sys-content').innerHTML = `
+            <div style="margin-bottom:10px;">
+              [VRAM_ALLOCATION]<br>
+              <span style="color:var(--primary)">CAPACITY:</span> ${data.gpu_pool.capacity} CORES<br>
+              <span style="color:${data.gpu_pool.active_jobs > 0 ? '#ff6b6b' : 'var(--primary)'}">ACTIVE:</span> ${data.gpu_pool.active_jobs}<br>
+            </div>
+            <div style="margin-bottom:10px;">
+              [DISPATCH_QUEUES]<br>
+              <span style="color:#ff6b6b">IMMEDIATE:</span> ${data.queues.immediate}<br>
+              <span style="color:#feca57">NORMAL:</span> ${data.queues.normal}<br>
+              <span style="color:var(--primary)">LOW:</span> ${data.queues.low}
+            </div>
+            <div>[TRACKED_EVENTS] ${data.active_events}</div>
+          `;
+       } catch(e) {
+          document.getElementById('sys-content').innerHTML = `NO CONNECTION TO 0CORE ENGINE`;
+       }
+    }
+
+  </script>
+</body>
+</html>

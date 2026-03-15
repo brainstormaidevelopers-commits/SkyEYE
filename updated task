@@ -1,0 +1,34 @@
+# SKYEYE Task Tracker
+
+This document tracks the execution of the Phase 0-7 Master Architecture Roadmap, reprioritized for the Week 1-4 Critical Dependencies Sprint.
+
+## Current Priority: Week 2 - Dispatch Layer (Phase 2.5)
+
+**Goal:** Build the orchestration controller to assign workloads and manage GPU queues.
+
+### Immediate Next Steps
+- [ ] **2.5.1: PriorityDispatcher**: Implement 3-queue system (Immediate/Normal/Low) in [anomaly_dispatcher.py](file:///f:/2026%20BUSINESS%20IDEAS/BRAINSTORM/SKYEYE/skyeye_engine/brain/anomaly_dispatcher.py).
+- [ ] **2.5.2: GPUResourcePool**: Build local GPU allocation logic for reconstruction tasks.
+- [ ] **2.5.3: PipelineSelector**: Create logic to assign the correct solver (SPH/PBD/etc.) based on event type.
+- [ ] **2.5.4: Agent Uplink Endpoint**: Add a dedicated telemetry endpoint for status tracking on the dashboard.
+- [ ] **2.5.5: End-to-End Core Test**: Verify ingest → detect → dispatch → reconstruct logic.
+
+---
+
+## Upcoming Sprints
+* **Week 2: Dispatch Layer (Phase 2.5):** Priority queueing, GPU resource pools, Pipeline selectors.
+* **Week 3: Geolocation Pipeline (Phase 1.2):** Handling GPS-less un-tagged videos via landmarks.
+* **Week 4: Streaming Engine (Phase 4.5):** WebSockets, push telemetry, UI Live syncing.
+
+## Deferred Tasks
+- Phase 5.1: Neural Super-Resolution Execution (Deferred)
+- Phase 4.1: Doctrine UI Overhaul (Deferred pending core engine completion)
+- Phase 6.5: Collaboration Features (Deferred)
+
+## Completed
+- [x] Phase 1.1: Satellite Stream Monitors
+- [x] Phase 1.3: News API Scrapers (USGS/GDACS Mocks -> Live transitioning)
+- [x] Phase 1.7: STAC Integration
+- [x] Phase 2.1: TGH Temporal Hierarchy
+- [x] Phase 4.2: Cesium Integration
+- [x] AI System Design Doctrine established.

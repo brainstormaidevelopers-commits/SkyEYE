@@ -1,0 +1,36 @@
+============================================================
+EARTH OS: END-TO-END LIVE INTEGRATION TEST
+============================================================
+
+[1] NEWS PINS (USGS LIVE + GDACS)...
+    [USGS-LIVE] M5.3 Off the coast of Aisen, Chile | Urgency: 10 | Solver: PBD
+    [USGS-LIVE] M4.8 54 km SE of Yilan, Taiwan | Urgency: 9 | Solver: PBD
+    FAILED: 'charmap' codec can't encode character '\u016b' in position 36: character maps to <undefined>
+
+[2] PROBING FRANKFURT (50.1, 8.6) WITH LIVE SENSORS...
+    atmosphere.chemistry: val=402 | source=mock
+    hazards.seismic: val=0.0 | source=usgs-live
+    structure.radar: val=0.05 | source=mock
+    terrain.elevation: val=12.0 | source=mock
+    thermal.land_surface: val=8.9 | source=open-meteo-live
+    visual.optical: val=0.95752127 | source=sentinel-2-stac
+    weather.clouds: val=3 | source=open-meteo-live
+
+    ONTOLOGY: Deciphered/Segmented
+    TRUST SCORE: 1.0
+
+[3] AI ANOMALY DISPATCH...
+    [10.0G] M5.3 Off the coast of Aisen, Chile | QUEUED
+         VLM: Nominal observation.
+    [10.0G] M5.3 67 km SSW of Chirilagua, El Salvador | QUEUED
+         VLM: Nominal observation.
+    [9.0G] M4.8 54 km SE of Yilan, Taiwan | QUEUED
+         VLM: Nominal observation.
+
+[4] VLM SCENE INTERPRETATION...
+    [ENTITY] Buried Foundation (Geometric) (89%)
+    REASONING: Nominal observation.
+
+============================================================
+END-TO-END VERIFICATION COMPLETE
+============================================================
