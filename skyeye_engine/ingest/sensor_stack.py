@@ -187,19 +187,13 @@ class SensorStackOrchestrator:
         layers["space.solar"] = self.space.get_solar_status()
         layers["space.meteor"] = self.space.get_meteor_nearby()
 
-        # --- TRUTH PIPELINE ---
-        trust_score = 0.95
-        live_count = sum(1 for v in layers.values() if isinstance(v, dict) and v.get("source", "").endswith("-live"))
-        mock_count = sum(1 for v in layers.values() if isinstance(v, dict) and v.get("source") == "mock")
-        trust_score = 0.5 + (live_count / max(1, live_count + mock_count)) * 0.5
-
-        if news_context:
-            news_str = str(news_context).lower()
-            if "flood" in news_str:
-                radar_val = layers.get("structure.radar", {}).get("val", 0)
-                if isinstance(radar_val, (int, float)) and radar_val < 0.2:
-                    trust_score -= 0.2
-                    print("[TRUTH] Radar contradicts flood signal.")
+        # --- STATUS & HEALTH (Doctrine v2) ---
+        sensor_status = {
+            "stac": "active" if live_count > 0 else "degraded",
+            "nasa": "active" if layers.get("space.solar", {}).get("source") != "mock" else "inactive",
+            "usgs": "active" if layers.get("hazards.seismic", {}).get("source") != "mock" else "inactive",
+            "ground": "active" if layers.get("terrain.elevation", {}).get("ground_fidelity") == "AVAILABLE" else "lost"
+        }
 
         print(f"[ORCHESTRATOR] Trust={trust_score:.2f} | Live={live_count} | Mock={mock_count}")
 
@@ -208,5 +202,7 @@ class SensorStackOrchestrator:
             "timestamp": datetime.now().isoformat(),
             "layers": layers,
             "ingest_trust": float(min(1.0, trust_score)),
-            "stream_stats": {"live": live_count, "mock": mock_count}
+            "stream_stats": {"live": live_count, "mock": mock_count},
+            "sensor_status": sensor_status,
+            "mode": "state_estimate" if mock_count > 0 else "authoritative_reconstruction"
         }

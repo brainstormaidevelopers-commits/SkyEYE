@@ -297,24 +297,59 @@
 
     const activeOverlays = {};
     let activeSensorBtn = null;
-    let sysInterval = null;
     let currentCtx = { lat: 0, lon: 0 };
-    let seenLogs = new Set();
     let socket = null;
+
+    // --- AUTHORITATIVE TARGET STATE (Doctrine v2) ---
+    const SkyEyeState = {
+       activeTarget: {
+          id: 'GROUND_TRACK',
+          lat: 0,
+          lon: 0,
+          alt: 0,
+          vel: 0,
+          hdg: 0,
+          confidence: 1.0,
+          timestamp: new Date().toISOString(),
+          status: 'IDLE'
+       },
+       sensorHealth: {
+          stac: 'active',
+          nasa: 'active',
+          usgs: 'active',
+          ground: 'active'
+       },
+       // Reactive Listeners
+       listeners: [],
+       subscribe(fn) { this.listeners.push(fn); },
+       updateTarget(data) {
+          this.activeTarget = { ...this.activeTarget, ...data, timestamp: new Date().toISOString() };
+          this.notify();
+       },
+       updateHealth(health) {
+          this.sensorHealth = { ...this.sensorHealth, ...health };
+          this.notify();
+       },
+       notify() {
+          this.listeners.forEach(fn => fn(this));
+       }
+    };
 
     function initApp() {
       activeSensorBtn = document.getElementById('btn-vision');
 
       // Timeline Scrubber Initialization
-      const slider = document.getElementById('time-slider');
-      slider.disabled = true;
-
-      // Initialize SocketIO for Real-Time Pulse
-      initSocket();
-
+      // Initialize HUD & State Binding
+      SkyEyeState.subscribe(renderHUD);
+      initHUD();
+      
+      // Start background status loop
+      fetchSysTelemetry();
+      setInterval(fetchSysTelemetry, 5000);
+      
       setInterval(loadStrategicPins, 10000);
 
-      // Hook up Cesium Entity Clicks to Context Card
+      // Hook up Cesium Entity Clicks to Authoritative State
       viewer.selectedEntityChanged.addEventListener((entity) => {
         if (entity) {
            const pos = entity.position ? entity.position.getValue(viewer.clock.currentTime) : null;
@@ -322,8 +357,17 @@
               const carto = Cesium.Ellipsoid.WGS84.cartesianToCartographic(pos);
               const lat = Cesium.Math.toDegrees(carto.latitude);
               const lon = Cesium.Math.toDegrees(carto.longitude);
+              
+              SkyEyeState.updateTarget({
+                 id: entity.name || entity.id,
+                 lat, lon, alt: carto.height,
+                 status: 'TRACKING'
+              });
+              
               showContextCard(entity.name || "Strategic Pin", lat, lon);
            }
+        } else {
+           SkyEyeState.updateTarget({ id: 'GROUND_TRACK', status: 'IDLE' });
         }
       });
 
@@ -365,12 +409,11 @@
 
     function updateHUD() {
        let lat, lon, alt = 0;
-       let targetName = "GROUND_REFERENCE";
+       let targetName = "GROUND_TRACK";
        
-       // Priority: Selected Entity > Camera Center
        const entity = viewer.selectedEntity;
        if (entity && entity.position) {
-          targetName = entity.name || "UNIDENTIFIED_TARGET";
+          targetName = entity.name || "ACTIVE_TARGET";
           const pos = entity.position.getValue(viewer.clock.currentTime);
           if (pos) {
              const carto = Cesium.Ellipsoid.WGS84.cartesianToCartographic(pos);
@@ -379,7 +422,6 @@
              alt = carto.height;
           }
        } else {
-          // Camera Center (Raycast to ground)
           const windowCenter = new Cesium.Cartesian2(viewer.container.clientWidth / 2, viewer.container.clientHeight / 2);
           const ray = viewer.camera.getPickRay(windowCenter);
           const pos = viewer.scene.globe.pick(ray, viewer.scene);
@@ -392,28 +434,52 @@
        }
 
        if (lat !== undefined && lon !== undefined) {
-          // Update Coordinate Ticker
-          document.getElementById('hud-coords').innerText = `${lat.toFixed(6)}°, ${lon.toFixed(6)}°, ${alt.toFixed(0)}m`;
-          
-          // Update Target Vector Block
           const now = Date.now();
           const dt = (now - lastHudTime) / 1000;
+          let vel = 0, hdg = 0;
+          
           if (dt > 0.1) {
              const dist = calculateDistance(lastHudPos.lat, lastHudPos.lon, lat, lon);
-             const vel = (dist / dt) * 3600; // km/h
-             const hdg = calculateHeading(lastHudPos.lat, lastHudPos.lon, lat, lon);
-             
-             document.getElementById('hud-vectors').innerHTML = `
-                <span style="color:var(--primary)">ID:</span> ${targetName}<br>
-                ${vel.toFixed(1)} km/h | ${hdg.toFixed(0)}° | ${((alt / 1000)).toFixed(2)}km
-             `;
-             
+             vel = (dist / dt) * 3600;
+             hdg = calculateHeading(lastHudPos.lat, lastHudPos.lon, lat, lon);
              lastHudPos = { lat, lon, alt };
              lastHudTime = now;
           }
-          
-          document.getElementById('hud-timestamp').innerText = `SYNC: ${new Date().toLocaleTimeString()} [LIVE]`;
+
+          // Authoritative State Update
+          SkyEyeState.updateTarget({
+             id: targetName, lat, lon, alt, vel, hdg
+          });
        }
+    }
+
+    function renderHUD(state) {
+       const t = state.activeTarget;
+       const h = state.sensorHealth;
+       
+       // 1. Coordinate Ticker (Precise)
+       document.getElementById('hud-coords').innerText = 
+          `${t.lat.toFixed(6)}°, ${t.lon.toFixed(6)}°, ${t.alt.toFixed(0)}m`;
+       
+       // 2. Vectors & ID
+       document.getElementById('hud-vectors').innerHTML = `
+          <span style="color:var(--primary)">ID:</span> ${t.id}<br>
+          ${t.vel.toFixed(1)} km/h | ${t.hdg.toFixed(0)}° | ${((t.alt / 1000)).toFixed(2)}km
+       `;
+       
+       // 3. Sensor Health Strips
+       const container = document.getElementById('sensor-health-strip');
+       if (container) {
+          container.innerHTML = Object.keys(h).map(key => `
+             <div class="health-item">
+                <span title="${key.toUpperCase()}">${key.toUpperCase()}</span>
+                <div class="health-bar"><div class="health-fill" style="width: ${h[key] === 'active' ? '100%' : (h[key] === 'degraded' ? '50%' : '5%')}"></div></div>
+                <span style="color: ${h[key] === 'active' ? 'var(--primary)' : '#ff6b6b'}">${h[key].toUpperCase()}</span>
+             </div>
+          `).join('');
+       }
+
+       document.getElementById('hud-timestamp').innerText = `SYNC: ${new Date(t.timestamp).toLocaleTimeString()} [${t.status}]`;
     }
 
     function calculateDistance(lat1, lon1, lat2, lon2) {
@@ -531,9 +597,10 @@
         if (data.error) {
            document.getElementById('ctx-content').innerHTML = `No reconstructed baseline found.<br><br>Wait for AI dispatch probe or manually INITIATE SENSE.`;
         } else {
-           updateContextUI(data);
-           applyReconstructionVisuals(data);
-        }
+            if (data.sensor_status) SkyEyeState.updateHealth(data.sensor_status);
+            updateContextUI(data);
+            applyReconstructionVisuals(data);
+         }
       } catch(e) {
         document.getElementById('ctx-content').innerHTML = `UPLINK_OFFLINE`;
         console.error(e);
@@ -843,11 +910,9 @@
       const modal = document.getElementById('sys-modal');
       if(modal.style.display === 'block') {
          modal.style.display = 'none';
-         if(sysInterval) clearInterval(sysInterval);
       } else {
          modal.style.display = 'block';
          fetchSysTelemetry();
-         sysInterval = setInterval(fetchSysTelemetry, 2000);
       }
     }
 
