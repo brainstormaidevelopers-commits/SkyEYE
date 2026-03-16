@@ -189,6 +189,7 @@ class Dither3DEngine:
         return layers_dict
 
 from skyeye_engine.fusion.engine_genesis.topography_recon import ImmersiveTopographyEngine
+from skyeye_engine.fusion.engine_genesis.mesh_healing import MeshHealer
 
 class TGHDeltaEngine:
     def __init__(self):
@@ -197,6 +198,7 @@ class TGHDeltaEngine:
         self.equilibrium = EquilibriumEngine()
         self.dither3d = Dither3DEngine()
         self.topography = ImmersiveTopographyEngine()
+        self.healer = MeshHealer()
 
     def update_base_model(self, lat: float, lon: float, full_stack: Dict[str, Any]):
         key = f"{lat:.4f},{lon:.4f}"
@@ -267,6 +269,10 @@ class TGHDeltaEngine:
         ground_meta = topo_layer.get('ground_meta')
         reassembly = self.topography.reconstruct_ground(lat, lon, ground_meta)
         
+        # Phase 4: Mesh Healing (Nanite Logic)
+        poly_density = reconstructed.get('visual.optical', {}).get('val', 0.5)
+        healing_stats = self.healer.process_mesh_delta(lat, lon, poly_density)
+        
         return {
             'lat': lat, 'lon': lon,
             'base_timestamp': base['timestamp'].isoformat(),
@@ -275,7 +281,8 @@ class TGHDeltaEngine:
             'physics_consistency_score': float(avg_score),
             'mode': 'state_estimate',
             'ontology': ontology,
-            'ground_reassembly': reassembly
+            'ground_reassembly': reassembly,
+            'mesh_healing': healing_stats
         }
 
     def get_reconstructed_at_time(self, lat: float, lon: float, target_time: datetime):
@@ -292,9 +299,14 @@ class TGHDeltaEngine:
             reconstructed.update(d.get('delta', {}))
             phys_score *= d.get('physics_score', 1.0)
             
+        # Phase 4: Mesh Healing (Historical Derivative)
+        poly_density = reconstructed.get('visual.optical', {}).get('val', 0.5)
+        healing_stats = self.healer.process_mesh_delta(lat, lon, poly_density)
+            
         return {
             'sensors': reconstructed,
             'physics_consistency': float(phys_score),
             'scrub_time': target_time.isoformat(),
-            'mode': 'historical_reconstruction'
+            'mode': 'historical_reconstruction',
+            'mesh_healing': healing_stats
         }

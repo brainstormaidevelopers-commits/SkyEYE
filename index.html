@@ -137,11 +137,15 @@
       display: flex; flex-direction: column; gap: 10px; align-items: flex-end;
       pointer-events: none;
     }
-    .alert-toast {
-      padding: 15px; width: 300px; pointer-events: auto;
-      animation: slideIn 0.3s cubic-bezier(0.23, 1, 0.32, 1);
-    }
+    .alert-toast { font-size: 11px; padding: 12px 18px; border: 2px solid #000; box-shadow: 4px 4px 0 #000; animation: slideIn 0.3s ease-out; font-family: var(--font-mono); }
     @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+    /* GENESIS_EFFECTS */
+    #overlay-fx {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none; z-index: 5; display: none;
+      transition: all 0.5s ease;
+    }
 
     /* Persistent HUD */
     .hud-block {
@@ -265,6 +269,7 @@
   </div>
 
   <div id="cesiumContainer"></div>
+  <div id="overlay-fx"></div>
 
   <script>
     Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJjOTVhZGI5Zi0wMTYzLTQ2MWEtYTBjYS02OTc5ZGNkNTY3ZDMiLCJpZCI6NTcwNzEsImlhdCI6MTc2MjQ3OTkyNH0.1bx7V2IFDE_Id5uqrQx-pJvRlzH34NDa2zc8vDY-Y0w';
@@ -626,6 +631,13 @@
           diveBtn.style.display = 'none';
        }
 
+       const h = data.mesh_healing;
+       let healStatus = '';
+       if (h) {
+          const color = h.status === 'HEALED' ? '#f9ca24' : '#4ade80';
+          healStatus = `<br><span style="color:${color}">[ MESH_${h.status} ]: ${h.vector_id} (${(h.poly_count/1000).toFixed(1)}k POLYS)</span>`;
+       }
+
        document.getElementById('ctx-content').innerHTML = `
           [${isHistorical ? 'HISTORICAL_RECON' : 'OBSERVED_DATA_LINK'}]<br>
           <span style="color:var(--primary)">OPTICAL_STACK:</span> ${s['visual.optical']?.val || '0.00'} [FIDELITY: ${s['visual.optical']?.fidelity_boost || 'BASE'}]<br>
@@ -633,7 +645,7 @@
           <span style="color:#9c88ff">SEISMIC:</span> ${s['hazards.seismic']?.val || 'N/A'}<br>
           <span style="color:#f9ca24">SOLAR_FLARES:</span> ${s['space.solar']?.active_flares || 0}<br>
           <span style="color:#f9ca24">FIREBALLS:</span> ${s['space.meteor']?.recent_fireballs || 0}<br>
-          ${res}${groundStatus}
+          ${res}${groundStatus}${healStatus}
           <br>[CONFIDENCE: ${((data.physics_consistency_score || data.physics_consistency || 1.0)*100).toFixed(0)}%]
        `;
        if(isHistorical) {
@@ -656,7 +668,11 @@
         feed.appendChild(toast);
         setTimeout(() => toast.remove(), 5000);
 
-        // 2. Camera Fly-Down
+        // 2. Camera Fly-Down with SCANNER Effect
+        document.getElementById('overlay-fx').style.display = 'block';
+        document.getElementById('overlay-fx').style.background = 'repeating-linear-gradient(0deg, rgba(74, 222, 128, 0.05), rgba(74, 222, 128, 0.05) 1px, transparent 1px, transparent 2px)';
+        document.getElementById('overlay-fx').style.boxShadow = 'inset 0 0 100px rgba(74, 222, 128, 0.2)';
+
         viewer.camera.flyTo({
            destination: Cesium.Cartesian3.fromDegrees(currentCtx.lon, currentCtx.lat, params.range),
            orientation: {
@@ -667,6 +683,7 @@
            duration: 3.0,
            complete: () => {
               // Toggle "Walk" Mode visuals
+              document.getElementById('overlay-fx').style.background = 'none';
               document.getElementById('overlay-fx').style.boxShadow = 'inset 0 0 100px #4ade80';
               document.getElementById('overlay-fx').style.display = 'block';
            }
