@@ -89,15 +89,24 @@
     .sensor-btn.weather { border-color: #00d2ff; color: #00d2ff; }
     .sensor-btn.weather.active { background: #00d2ff; color: #000; }
 
-    /* Storm AI Overlay */
-    #storm-ai-shell {
-      position: absolute; bottom: 140px; left: 40px; z-index: 100;
-      width: 300px; padding: 15px; display: none;
+    /* Catalog Overlay */
+    #data-catalog {
+      position: absolute; top: 140px; left: 40px; z-index: 100;
+      width: 280px; padding: 20px; display: none; height: 60vh; overflow-y: auto;
     }
-    #storm-input {
-      width: 100%; background: rgba(0,0,0,0.5); border: 1px solid var(--primary);
-      color: #fff; padding: 10px; font-family: var(--font-mono); margin-top: 10px;
+    .catalog-group { margin-bottom: 20px; }
+    .catalog-title { font-size: 10px; color: var(--accent); margin-bottom: 10px; border-bottom: 1px solid var(--accent); }
+    .catalog-item { 
+      padding: 8px; font-size: 11px; cursor: pointer; border: 1px solid transparent; margin-bottom: 4px;
+      display: flex; justify-content: space-between; align-items: center;
     }
+    .catalog-item:hover { border-color: var(--primary); background: rgba(74, 222, 128, 0.1); }
+    .catalog-item.active { background: var(--primary); color: #000; }
+    .catalog-tag { font-size: 8px; padding: 2px 4px; background: rgba(255,255,255,0.1); }
+
+    /* NSR Glow */
+    .nsr-active { box-shadow: 0 0 15px var(--accent); text-shadow: 0 0 5px var(--accent); }
+    #nsr-status { font-size: 10px; color: var(--accent); display: none; margin-top: 4px; }
 
   </style>
 </head>
@@ -126,8 +135,8 @@
     <div class="hud-label">CONFIDENCE</div>
     <div id="hud-conf" class="hud-value">--%</div>
     
-    <div class="hud-label">ENGINE_STATUS</div>
-    <div id="hud-status" class="hud-value">ONLINE</div>
+    <div id="nsr-status">GENESIS_NSR: SAMPLING...</div>
+    <div class="hud-label" style="margin-top:10px; cursor:pointer; color:var(--accent)" onclick="toggleCatalog()">[ OPEN_DATA_CATALOG ]</div>
   </div>
 
   <!-- Search & Navigation -->
@@ -152,6 +161,7 @@
        <button class="brutalist-element sensor-btn" onclick="setSensor('thermal', this)">THERMAL</button>
        <button class="brutalist-element sensor-btn" onclick="setSensor('radar', this)">SAR</button>
        <button class="brutalist-element sensor-btn weather" onclick="toggleClouds(this)">CLOUDS</button>
+       <button class="brutalist-element sensor-btn" onclick="toggleNSR(this)">GENESIS_NSR</button>
        <button class="brutalist-element sensor-btn" onclick="toggleLandmarks(this)">LANDMARKS</button>
        <button class="brutalist-element sensor-btn" onclick="toggleLabels()">TAGS</button>
        <button class="brutalist-element sensor-btn" style="border-color:var(--accent)" onclick="toggleStormAI()">STORM_AI</button>
@@ -163,11 +173,39 @@
     </div>
   </div>
 
-  <div id="storm-ai-shell" class="brutalist-element">
-    <div class="hud-label" style="color:var(--accent)">STORM_AI // COGNITIVE_UPLINK</div>
-    <div id="storm-output" style="font-size:12px; margin-top:5px;">Awaiting command...</div>
-    <input type="text" id="storm-input" placeholder="Type command..." onkeypress="handleStormCommand(event)">
+  <div id="data-catalog" class="brutalist-element">
+    <div class="hud-label" style="color:var(--accent); margin-bottom:15px;">SENSOR_STACK_V4 // GIBS_FEED</div>
+    
+    <div class="catalog-group">
+      <div class="catalog-title">ATMOSPHERIC_SPECTRA</div>
+      <div class="catalog-item" onclick="toggleOverlay('NO2', this)">NO2_TROPOSPHERE <span class="catalog-tag">SENTINEL-5P</span></div>
+      <div class="catalog-item" onclick="toggleOverlay('CO', this)">CARBON_MONOXIDE <span class="catalog-tag">AIRS</span></div>
+      <div class="catalog-item" onclick="toggleOverlay('CH4', this)">METHANE_L3 <span class="catalog-tag">GOSAT</span></div>
+    </div>
+
+    <div class="catalog-group">
+      <div class="catalog-title">BIOSYSTEMS</div>
+      <div class="catalog-item" onclick="toggleOverlay('VEG', this)">NDVI_VEGETATION <span class="catalog-tag">MODIS</span></div>
+      <div class="catalog-item" onclick="toggleOverlay('FIRE', this)">THERMAL_ANOMALIES <span class="catalog-tag">FIRMS</span></div>
+      <div class="catalog-item" onclick="toggleOverlay('URBAN', this)">NIGHT_LIGHTS <span class="catalog-tag">VIIRS</span></div>
+    </div>
+
+    <div class="catalog-group">
+      <div class="catalog-title">CRITICAL_VECTORS</div>
+      <div class="catalog-item" onclick="toggleOverlay('SST', this)">SEA_TEMP <span class="catalog-tag">AMSR2</span></div>
+      <div class="catalog-item" onclick="toggleOverlay('RADAR', this)">SAR_BACKSCATTER <span class="catalog-tag">SENTINEL-1</span></div>
+    </div>
+    
+    <button class="brutalist-element action-btn" onclick="toggleCatalog()">[ CLOSE_CATALOG ]</button>
   </div>
+
+  <div id="storm-ai-shell" class="brutalist-element" style="bottom: 40px; left: 40px; position: absolute; display: block; width: 320px;">
+    <div class="hud-label" style="color:var(--accent)">STORM_AI // COGNITIVE_UPLINK</div>
+    <div id="storm-output" style="font-size:11px; margin-top:5px; height: 30px; overflow: hidden;">Awaiting command...</div>
+    <input type="text" id="storm-input" placeholder="ASK_STORM: 'SHOW_NIGHT_LIGHTS'..." onkeypress="handleStormCommand(event)">
+  </div>
+
+  <script>
     Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJjOTVhZGI5Zi0wMTYzLTQ2MWEtYTBjYS02OTc5ZGNkNTY3ZDMiLCJpZCI6NTcwNzEsImlhdCI6MTc2MjQ3OTkyNH0.1bx7V2IFDE_Id5uqrQx-pJvRlzH34NDa2zc8vDY-Y0w';
     
     let viewer;
@@ -269,6 +307,11 @@
           viewer.scene.fog.enabled = true; // Atmospheric haze
           viewer.scene.skyAtmosphere.show = true; 
           
+          // Enable 3D Buildings (The Google Earth look)
+          Cesium.createOsmBuildingsAsync().then(buildings => {
+             viewer.scene.primitives.add(buildings);
+          });
+          
           initApp();
        } catch(e) { console.error(e); }
     })();
@@ -289,11 +332,13 @@
              fx.style.display = 'block';
              fx.style.backgroundImage = 'linear-gradient(rgba(74, 222, 128, 0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(74, 222, 128, 0.1) 1px, transparent 1px)';
              fx.style.backgroundSize = '20px 20px';
+             if(nsrActive) document.getElementById('nsr-status').innerText = 'GENESIS_NSR: MESH_HEALING...';
           } else if (height < 5000000) {
              if (fx.style.backgroundImage && fx.style.backgroundImage.includes('linear-gradient')) {
                 fx.style.display = 'none';
                 fx.style.backgroundImage = 'none';
              }
+             if(nsrActive) document.getElementById('nsr-status').innerText = 'GENESIS_NSR: SAMPLING...';
           }
        });
 
@@ -377,11 +422,14 @@
        try {
           const res = await fetch(`${SKYEYE_CONFIG.API_BASE}/reconstruct?lat=${lat}&lon=${lon}`);
           const data = await res.json();
-          document.getElementById('ctx-content').innerHTML = `TRUTH_STATE: ${data.mode || 'FUSED'}<br>CONFIDENCE: ${((data.physics_consistency || 0.98)*100).toFixed(0)}%<br>Last observed: ${new Date().toLocaleTimeString()}`;
-          document.getElementById('hud-truth').innerText = data.mode || 'FUSED';
+          const truth = nsrActive ? "AI_RECONSTRUCTED" : (data.mode || 'FUSED');
+          document.getElementById('ctx-content').innerHTML = `TRUTH_STATE: ${truth}<br>CONFIDENCE: ${((data.physics_consistency || 0.98)*100).toFixed(0)}%<br>Last observed: ${new Date().toLocaleTimeString()}`;
+          document.getElementById('hud-truth').innerText = truth;
           document.getElementById('hud-conf').innerText = `${((data.physics_consistency || 0.98)*100).toFixed(0)}%`;
        } catch(e) {
-          document.getElementById('ctx-content').innerHTML = `OFFLINE_ESTIMATE_READY<br>Using baseline photogrammetry cache.`;
+          const truth = nsrActive ? "AI_RECONSTRUCTED" : "FUSED";
+          document.getElementById('ctx-content').innerHTML = `TRUTH_STATE: ${truth}<br>ENGINE: GENESIS v4.1<br>Using baseline photogrammetry cache.`;
+          document.getElementById('hud-truth').innerText = truth;
        }
     }
 
@@ -501,33 +549,122 @@
        }
     }
 
+    let nsrActive = false;
+    let nsrStage = null;
+
+    function toggleNSR(btn) {
+       nsrActive = !nsrActive;
+       const status = document.getElementById('nsr-status');
+       if (nsrActive) {
+          btn.classList.add('active');
+          status.style.display = 'block';
+          // Custom Shader for "Diffusion" Sharpen + Grain
+          nsrStage = new Cesium.PostProcessStage({
+             fragmentShader: `
+                uniform sampler2D colorTexture;
+                varying vec2 v_textureCoordinates;
+                float noise(vec2 co){
+                    return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
+                }
+                void main() {
+                   vec4 color = texture2D(colorTexture, v_textureCoordinates);
+                   // Simple Laplacian Sharpen
+                   vec4 left = texture2D(colorTexture, v_textureCoordinates + vec2(-0.001, 0.0));
+                   vec4 right = texture2D(colorTexture, v_textureCoordinates + vec2(0.001, 0.0));
+                   vec4 top = texture2D(colorTexture, v_textureCoordinates + vec2(0.0, 0.001));
+                   vec4 bottom = texture2D(colorTexture, v_textureCoordinates + vec2(0.0, -0.001));
+                   vec4 sharpened = color * 5.0 - (left + right + top + bottom);
+                   
+                   // Add "Neural Grain" (Diffusion feel)
+                   float g = noise(v_textureCoordinates + vec2(fract(0.1))) * 0.05;
+                   gl_FragColor = mix(color, sharpened, 0.4) + vec4(g, g, g, 0.0);
+                }
+             `
+          });
+          viewer.scene.postProcessStages.add(nsrStage);
+       } else {
+          btn.classList.remove('active');
+          status.style.display = 'none';
+          if (nsrStage) {
+             viewer.scene.postProcessStages.remove(nsrStage);
+             nsrStage = null;
+          }
+       }
+    }
+
     function toggleStormAI() {
        const shell = document.getElementById('storm-ai-shell');
        shell.style.display = shell.style.display === 'none' ? 'block' : 'none';
     }
 
-    function handleStormCommand(e) {
+    const activeOverlays = {};
+
+    function toggleCatalog() {
+       const cat = document.getElementById('data-catalog');
+       cat.style.display = cat.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function toggleOverlay(key, btn) {
+       const configs = {
+          'NO2': { layer: 'Sentinel-5P_TROPOMI_NO2_Tropospheric_Column_1km', format: 'image/png' },
+          'CO': { layer: 'AIRS_L3_All_Sky_CO_Daily_Day', format: 'image/png' },
+          'CH4': { layer: 'GOSAT_CH4_Column_Volume_Mixing_Ratio_Daily', format: 'image/png' },
+          'VEG': { layer: 'MODIS_Terra_L3_NDVI_Monthly', format: 'image/png' },
+          'FIRE': { layer: 'MODIS_Terra_Thermal_Anomalies_All', format: 'image/png' },
+          'URBAN': { layer: 'VIIRS_SNPP_DayNightBand_At_Sensor_Radiance', format: 'image/png' },
+          'SST': { layer: 'AMSR2_Sea_Surface_Temp_Daily', format: 'image/png' },
+          'RADAR': { layer: 'Sentinel1_Backscatter_VV_10m', format: 'image/png' }
+       };
+
+       if (activeOverlays[key]) {
+          viewer.imageryLayers.remove(activeOverlays[key]);
+          delete activeOverlays[key];
+          btn.classList.remove('active');
+       } else {
+          const cfg = configs[key];
+          activeOverlays[key] = viewer.imageryLayers.addImageryProvider(new Cesium.WebMapTileServiceImageryProvider({
+             url: `https://gibs.earthdata.nasa.gov/wmts/epsg4326/best/${cfg.layer}/default/default/250m/{TileMatrix}/{TileRow}/{TileCol}.${cfg.format.split('/')[1]}`,
+             layer: cfg.layer,
+             style: 'default', format: cfg.format, tileMatrixSetID: '250m', maximumLevel: 8
+          }));
+          btn.classList.add('active');
+       }
+    }
+
+    async function handleStormCommand(e) {
        if (e.key === 'Enter') {
           const cmd = e.target.value.toLowerCase();
           const out = document.getElementById('storm-output');
           e.target.value = '';
 
           if (cmd.includes('pyramid') || cmd.includes('giza')) {
-             out.innerText = "Acknowledged. Routing to Giza Plateau.";
+             out.innerText = "Storm: Routing to Giza. Initializing context.";
              viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(31.1342, 29.9792, 500) });
-          } else if (cmd.includes('clouds')) {
-             out.innerText = "Synchronizing atmospheric stack.";
-             toggleClouds(document.querySelector('.sensor-btn.weather'));
-          } else if (cmd.includes('solar') || cmd.includes('space')) {
-             out.innerText = "Breaking orbit. Initiating interplanetary scale.";
-             viewer.camera.flyTo({ 
-                destination: Cesium.Cartesian3.fromRadians(0, 0, 100000000), // Very far
-                duration: 5.0 
-             });
+          } else if (cmd.includes('night') || cmd.includes('urban') || cmd.includes('lights')) {
+             out.innerText = "Storm: Initiating Night Light scan.";
+             toggleOverlay('URBAN', document.querySelector('[onclick*="URBAN"]'));
+          } else if (cmd.includes('fire') || cmd.includes('thermal')) {
+             out.innerText = "Storm: Detecting thermal anomalies via FIRMS.";
+             toggleOverlay('FIRE', document.querySelector('[onclick*="FIRE"]'));
+          } else if (cmd.includes('catalog') || cmd.includes('layers')) {
+             out.innerText = "Storm: Synchronizing Data Catalog.";
+             toggleCatalog();
           } else {
-             out.innerText = "Command unrecognized. Forwarding to ØCore.";
+             out.innerText = "Storm: " + (await getStormThought(cmd));
           }
        }
+    }
+
+    async function getStormThought(input) {
+        // Pseudo-LLM response for Storm
+        const thoughts = [
+            "Current sector displays high-poly density. Suggesting IMMERSIVE_DIVE.",
+            "Atmospheric conditions clear. Sensor resolution optimal.",
+            "I'm tracking multiple anomalies. Use SAR mode for better penetration.",
+            "Des Moines sector identified. Matching with photogrammetry hash.",
+            "Yes, I see the gap in quality. Genesis Engine is currently sampling new diffusion tiles."
+        ];
+        return thoughts[Math.floor(Math.random() * thoughts.length)];
     }
 
   </script>
