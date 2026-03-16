@@ -291,12 +291,12 @@
           infoBox: false, selectionIndicator: false,
           skyBox: new Cesium.SkyBox({
             sources: {
-              positiveX: 'https://raw.githubusercontent.com/CesiumGS/cesium/main/Packages/Assets/Textures/SkyBox/tycho800_px.jpg',
-              negativeX: 'https://raw.githubusercontent.com/CesiumGS/cesium/main/Packages/Assets/Textures/SkyBox/tycho800_mx.jpg',
-              positiveY: 'https://raw.githubusercontent.com/CesiumGS/cesium/main/Packages/Assets/Textures/SkyBox/tycho800_py.jpg',
-              negativeY: 'https://raw.githubusercontent.com/CesiumGS/cesium/main/Packages/Assets/Textures/SkyBox/tycho800_my.jpg',
-              positiveZ: 'https://raw.githubusercontent.com/CesiumGS/cesium/main/Packages/Assets/Textures/SkyBox/tycho800_pz.jpg',
-              negativeZ: 'https://raw.githubusercontent.com/CesiumGS/cesium/main/Packages/Assets/Textures/SkyBox/tycho800_mz.jpg'
+              positiveX: Cesium.buildModuleUrl('Assets/Textures/SkyBox/tycho800_px.jpg'),
+              negativeX: Cesium.buildModuleUrl('Assets/Textures/SkyBox/tycho800_mx.jpg'),
+              positiveY: Cesium.buildModuleUrl('Assets/Textures/SkyBox/tycho800_py.jpg'),
+              negativeY: Cesium.buildModuleUrl('Assets/Textures/SkyBox/tycho800_my.jpg'),
+              positiveZ: Cesium.buildModuleUrl('Assets/Textures/SkyBox/tycho800_pz.jpg'),
+              negativeZ: Cesium.buildModuleUrl('Assets/Textures/SkyBox/tycho800_mz.jpg')
             }
           })
         });
