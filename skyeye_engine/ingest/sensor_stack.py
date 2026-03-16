@@ -189,8 +189,12 @@ class SensorStackOrchestrator:
         layers["space.meteor"] = self.space.get_meteor_nearby()
 
         # --- STATUS & HEALTH (Doctrine v2) ---
+        live_count = sum(1 for l in layers.values() if l.get("source") and "mock" not in l["source"])
+        mock_count = sum(1 for l in layers.values() if l.get("source") and "mock" in l["source"])
+        trust_score = live_count / len(layers) if layers else 0.0
+
         sensor_status = {
-            "stac": "active" if live_count > 0 else "degraded",
+            "stac": "active" if "multi-stac-stack" in layers.get("visual.optical", {}).get("source", "") else "degraded",
             "nasa": "active" if layers.get("space.solar", {}).get("source") != "mock" else "inactive",
             "usgs": "active" if layers.get("hazards.seismic", {}).get("source") != "mock" else "inactive",
             "ground": "active" if layers.get("terrain.elevation", {}).get("ground_fidelity") == "AVAILABLE" else "lost"

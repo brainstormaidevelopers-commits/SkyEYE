@@ -288,8 +288,25 @@
           terrainProvider: terrain,
           baseLayerPicker: false, geocoder: false, homeButton: false, sceneModePicker: false,
           navigationHelpButton: false, animation: false, timeline: false, fullscreenButton: false,
-          infoBox: false, selectionIndicator: false
+          infoBox: false, selectionIndicator: false,
+          skyBox: new Cesium.SkyBox({
+            sources: {
+              positiveX: 'https://raw.githubusercontent.com/CesiumGS/cesium/main/Packages/Assets/Textures/SkyBox/tycho800_px.jpg',
+              negativeX: 'https://raw.githubusercontent.com/CesiumGS/cesium/main/Packages/Assets/Textures/SkyBox/tycho800_mx.jpg',
+              positiveY: 'https://raw.githubusercontent.com/CesiumGS/cesium/main/Packages/Assets/Textures/SkyBox/tycho800_py.jpg',
+              negativeY: 'https://raw.githubusercontent.com/CesiumGS/cesium/main/Packages/Assets/Textures/SkyBox/tycho800_my.jpg',
+              positiveZ: 'https://raw.githubusercontent.com/CesiumGS/cesium/main/Packages/Assets/Textures/SkyBox/tycho800_pz.jpg',
+              negativeZ: 'https://raw.githubusercontent.com/CesiumGS/cesium/main/Packages/Assets/Textures/SkyBox/tycho800_mz.jpg'
+            }
+          })
         });
+        
+        // --- SOLAR SYSTEM ENGINE ---
+        // Enhanced Stars & Atmosphere logic
+        viewer.scene.globe.enableLighting = true;
+        viewer.scene.fog.enabled = true;
+        viewer.scene.fog.density = 0.0002;
+        
         initApp();
       } catch(e) {
         viewer = new Cesium.Viewer('cesiumContainer', {
@@ -408,9 +425,48 @@
     let lastHudTime = Date.now();
 
     function initHUD() {
-       viewer.clock.onTick.addEventListener(() => {
-          updateHUD();
-       });
+        viewer.clock.onTick.addEventListener(() => {
+           updateHUD();
+        });
+        
+        // --- SOLAR SYSTEM ENGINE: SPACE TRANSITION ---
+        viewer.camera.moveEnd.addEventListener(() => {
+           const height = viewer.camera.positionCartographic.height;
+           const fx = document.getElementById('overlay-fx');
+           if (height > 5000000) { // Over 5000km
+              fx.style.display = 'block';
+              fx.style.background = 'radial-gradient(circle, transparent 20%, rgba(0,0,0,0.8) 100%)';
+              document.getElementById('hud-coords').style.color = '#f9ca24';
+              document.getElementById('engine-status').innerText = 'INTERPLANETARY_MODE';
+           } else {
+              if (fx.style.background.includes('radial-gradient')) {
+                  fx.style.display = 'none';
+                  fx.style.background = 'none';
+              }
+              document.getElementById('hud-coords').style.color = 'var(--primary)';
+              document.getElementById('engine-status').innerText = 'PLATFORM_ONLINE';
+           }
+        });
+
+        // --- NANITE_SIM: WIREFRAME RECONSTRUCTION ---
+        viewer.camera.changed.addEventListener(() => {
+           const height = viewer.camera.positionCartographic.height;
+           const fx = document.getElementById('overlay-fx');
+           if (height < 300) { // Below 300m
+              fx.style.display = 'block';
+              fx.style.backgroundImage = 'linear-gradient(rgba(74, 222, 128, 0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(74, 222, 128, 0.1) 1px, transparent 1px)';
+              fx.style.backgroundSize = '20px 20px';
+              fx.style.border = '2px solid rgba(74, 222, 128, 0.2)';
+              document.getElementById('engine-status').innerText = 'MESH_RECON_ACTIVE';
+           } else if (height < 5000000) {
+              if (fx.style.backgroundImage && fx.style.backgroundImage.includes('linear-gradient')) {
+                  fx.style.display = 'none';
+                  fx.style.backgroundImage = 'none';
+                  fx.style.border = 'none';
+                  document.getElementById('engine-status').innerText = 'PLATFORM_ONLINE';
+              }
+           }
+        });
     }
 
     function updateHUD() {
@@ -822,26 +878,43 @@
 
       if(mode === 'vision') {
         themeColor = '#4ade80';
+        // Baseline: Clear Sentinel-2 imagery
       }
       else if(mode === 'thermal') {
         themeColor = '#ff6b6b';
-        // Thermal Reassembly: BW + Sharpen
-        newAsset = Cesium.PostProcessStageLibrary.createBlackAndWhiteStage();
-        newAsset.uniforms.gradations = 5.0;
-        stages.add(newAsset);
-        isPostProcess = true;
-      }
-      else if(mode === 'radar') {
-        themeColor = '#9c88ff';
-        // SAR (Synthetic Aperture Radar): NightVision + High Res Edges
-        const nv = Cesium.PostProcessStageLibrary.createNightVisionStage();
-        const edges = Cesium.PostProcessStageLibrary.createEdgeDetectionStage();
+        // Thermal Reassembly: BW + Heat Bloom
+        const bw = Cesium.PostProcessStageLibrary.createBlackAndWhiteStage();
+        const bloom = Cesium.PostProcessStageLibrary.createBloomStage();
         newAsset = new Cesium.PostProcessStageComposite({
-            stages: [nv, edges],
-            name: 'sar_recon'
+            stages: [bw, bloom],
+            name: 'thermal_recon'
         });
         stages.add(newAsset);
         isPostProcess = true;
+        
+        // Add GIBS Thermal Layer (Nighttime Lights or similar)
+        const provider = new Cesium.WebMapTileServiceImageryProvider({
+          url : 'https://gibs.earthdata.nasa.gov/wmts/epsg4326/best/VIIRS_SNPP_Brightness_Temp_BandI5_Day/default/default/250m/{TileMatrix}/{TileRow}/{TileCol}.png',
+          layer : 'VIIRS_SNPP_Brightness_Temp_BandI5_Day',
+          style : 'default', format : 'image/png', tileMatrixSetID : '250m', maximumLevel: 5
+        });
+        activeOverlays['thermal_img'] = { asset: layers.addImageryProvider(provider), isPostProcess: false };
+      }
+      else if(mode === 'radar') {
+        themeColor = '#9c88ff';
+        // SAR (Synthetic Aperture Radar): Edge Detection + Grain
+        const edges = Cesium.PostProcessStageLibrary.createEdgeDetectionStage();
+        newAsset = edges;
+        stages.add(newAsset);
+        isPostProcess = true;
+
+        // Sentinel-1 SAR-lite layer
+        const provider = new Cesium.WebMapTileServiceImageryProvider({
+          url : 'https://gibs.earthdata.nasa.gov/wmts/epsg4326/best/Coastline/default/default/250m/{TileMatrix}/{TileRow}/{TileCol}.png',
+          layer : 'Coastline',
+          style : 'default', format : 'image/png', tileMatrixSetID : '250m', maximumLevel: 5
+        });
+        activeOverlays['radar_img'] = { asset: layers.addImageryProvider(provider), isPostProcess: false };
       }
       else if(mode === 'chemical') {
         themeColor = '#feca57';
@@ -854,6 +927,7 @@
       }
       else if(mode === 'space') {
         themeColor = '#f9ca24'; 
+        // Space Mode: Invert + Aurora Bloom
         const invert = Cesium.PostProcessStageLibrary.createInvertStage();
         const bloom = Cesium.PostProcessStageLibrary.createBloomStage();
         newAsset = new Cesium.PostProcessStageComposite({
@@ -865,9 +939,30 @@
       }
       else if(mode === 'seismic') {
         themeColor = '#a55eea';
+        // Seismic: High frequency edge detection (vibration simulation)
         newAsset = Cesium.PostProcessStageLibrary.createEdgeDetectionStage();
+        newAsset.uniforms.color = Cesium.Color.fromCssColorString('#a55eea');
         stages.add(newAsset);
         isPostProcess = true;
+      }
+
+      // --- DITHER3D SCALE ENGINE ---
+      // Apply "Fractal Detail" grit when any sensor is active to break "Mock" feel
+      if (!activeOverlays['dither']) {
+          const dither = new Cesium.PostProcessStage({
+              fragmentShader : `
+                  uniform sampler2D colorTexture;
+                  varying vec2 v_textureCoordinates;
+                  float random(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+                  void main() {
+                      vec4 color = texture2D(colorTexture, v_textureCoordinates);
+                      float n = random(v_textureCoordinates + czm_frameNumber * 0.01) * 0.05;
+                      gl_FragColor = color + n;
+                  }
+              `
+          });
+          stages.add(dither);
+          activeOverlays['dither'] = { asset: dither, isPostProcess: true };
       }
 
       if (newAsset) {
@@ -896,31 +991,22 @@
             id: entityId,
             name: pin.title,
             position: Cesium.Cartesian3.fromDegrees(pin.lon, pin.lat),
-            point: { pixelSize: 10, color: color, outlineColor: Cesium.Color.BLACK, outlineWidth: 2 },
+            point: { pixelSize: 12, color: color, outlineColor: Cesium.Color.BLACK, outlineWidth: 3 },
             label: {
                text: pin.title,
                font: '10px Space Mono',
                style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+               fillColor: color,
+               outlineColor: Cesium.Color.BLACK,
                outlineWidth: 2,
                verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
                pixelOffset: new Cesium.Cartesian2(0, -15),
-               fillColor: Cesium.Color.fromCssColorString('#4ade80'),
                showBackground: true,
-               backgroundColor: new Cesium.Color(0, 0, 0, 0.7),
-               distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 5000000)
+               backgroundColor: new Cesium.Color(0.0, 0.0, 0.0, 0.7)
             },
-            path: {
-               resolution: 1,
-               material: new Cesium.PolylineGlowMaterialProperty({
-                  glowPower: 0.1,
-                  color: Cesium.Color.fromCssColorString('#4ade80')
-               }),
-               width: 5,
-               leadTime: 0,
-               trailTime: 1000
-            },
-            description: pin.description
+            description: `<h3>${pin.title}</h3><p>Category: ${pin.title.includes("M") ? "SEISMIC" : "ATMOSPHERIC"}</p><p>Link: <a href="#" style="color:var(--primary)">PROVENANCE_LOG</a></p>`
           });
+
         });
       } catch (e) {}
     }
