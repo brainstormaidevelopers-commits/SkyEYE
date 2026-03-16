@@ -558,26 +558,26 @@
        if (nsrActive) {
           btn.classList.add('active');
           status.style.display = 'block';
-          // Custom Shader for "Diffusion" Sharpen + Grain
+          // Neural Gaussian Splatting Emulation
           nsrStage = new Cesium.PostProcessStage({
              fragmentShader: `
                 uniform sampler2D colorTexture;
-                varying vec2 v_textureCoordinates;
-                float noise(vec2 co){
-                    return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
-                }
+                float noise(vec2 co){ return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453); }
                 void main() {
-                   vec4 color = texture2D(colorTexture, v_textureCoordinates);
-                   // Simple Laplacian Sharpen
-                   vec4 left = texture2D(colorTexture, v_textureCoordinates + vec2(-0.001, 0.0));
-                   vec4 right = texture2D(colorTexture, v_textureCoordinates + vec2(0.001, 0.0));
-                   vec4 top = texture2D(colorTexture, v_textureCoordinates + vec2(0.0, 0.001));
-                   vec4 bottom = texture2D(colorTexture, v_textureCoordinates + vec2(0.0, -0.001));
-                   vec4 sharpened = color * 5.0 - (left + right + top + bottom);
+                   vec2 uv = v_textureCoordinates;
+                   vec4 color = texture2D(colorTexture, uv);
                    
-                   // Add "Neural Grain" (Diffusion feel)
-                   float g = noise(v_textureCoordinates + vec2(fract(0.1))) * 0.05;
-                   gl_FragColor = mix(color, sharpened, 0.4) + vec4(g, g, g, 0.0);
+                   // Gaussian Point-Cloud Effect (Soft Dithering + Sharp Edges)
+                   float grain = noise(uv * 500.0 + fract(0.1)) * 0.12;
+                   vec4 n1 = texture2D(colorTexture, uv + vec2(0.0005, 0.0005));
+                   vec4 n2 = texture2D(colorTexture, uv - vec2(0.0005, 0.0005));
+                   vec4 splat = mix(color, (n1 + n2) * 0.5, 0.7);
+                   
+                   // Bloom/Heat Overlay for highlights
+                   float brightness = max(color.r, max(color.g, color.b));
+                   vec4 glow = vec4(0.0, 0.8, 0.4, 0.0) * pow(brightness, 3.0) * 0.4;
+                   
+                   gl_FragColor = splat + vec4(grain, grain, grain, 0.0) + glow;
                 }
              `
           });
@@ -637,7 +637,9 @@
           const out = document.getElementById('storm-output');
           e.target.value = '';
 
-          if (cmd.includes('pyramid') || cmd.includes('giza')) {
+          if (cmd.includes('scan') || cmd.includes('autonomous')) {
+             runAutonomousScan(out);
+          } else if (cmd.includes('pyramid') || cmd.includes('giza')) {
              out.innerText = "Storm: Routing to Giza. Initializing context.";
              viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(31.1342, 29.9792, 500) });
           } else if (cmd.includes('night') || cmd.includes('urban') || cmd.includes('lights')) {
@@ -650,9 +652,39 @@
              out.innerText = "Storm: Synchronizing Data Catalog.";
              toggleCatalog();
           } else {
-             out.innerText = "Storm: " + (await getStormThought(cmd));
+             // 0CORE Integration
+             out.innerText = "Storm: Querying 0CORE Cognitive Layer...";
+             const carto = viewer.camera.positionCartographic;
+             try {
+                const res = await fetch(`${SKYEYE_CONFIG.API_BASE}/interpret`, {
+                   method: 'POST',
+                   headers: { 'Content-Type': 'application/json' },
+                   body: JSON.stringify({
+                      lat: Cesium.Math.toDegrees(carto.latitude),
+                      lon: Cesium.Math.toDegrees(carto.longitude),
+                      prompt: cmd
+                   })
+                });
+                const data = await res.json();
+                out.innerText = "Storm: " + (data.vlm_reasoning || data.error || "Cognitive link active.");
+             } catch(e) {
+                out.innerText = "Storm: Awaiting 0CORE local link. Monitoring internal telemetry.";
+             }
           }
        }
+    }
+
+    async function runAutonomousScan(outputEle) {
+       const steps = ["URBAN", "FIRE", "RADAR", "NO2"];
+       outputEle.innerText = "Storm: Initiating Autonomous Sector Scan...";
+       for (let i = 0; i < steps.length; i++) {
+          await new Promise(r => setTimeout(r, 2000));
+          const key = steps[i];
+          const btn = document.querySelector(`[onclick*="${key}"]`);
+          outputEle.innerText = `Storm: Sampling ${key} Spectral Data...`;
+          toggleOverlay(key, btn);
+       }
+       outputEle.innerText = "Storm: Scan complete. Anomalies logged to 0CORE.";
     }
 
     async function getStormThought(input) {
