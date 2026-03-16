@@ -86,11 +86,18 @@
       cursor: pointer; text-transform: uppercase;
     }
     .sensor-btn.active { background: var(--primary); color: #000; box-shadow: none; transform: translate(2px, 2px); }
+    .sensor-btn.weather { border-color: #00d2ff; color: #00d2ff; }
+    .sensor-btn.weather.active { background: #00d2ff; color: #000; }
 
-    /* Timeline */
-    .timeline-bar { display: flex; align-items: center; gap: 10px; padding: 10px 20px; }
-    #time-slider { flex: 1; -webkit-appearance: none; background: transparent; height: 4px; border: 1px solid var(--primary); }
-    #time-slider::-webkit-slider-thumb { -webkit-appearance: none; height: 16px; width: 16px; background: var(--primary); cursor: pointer; }
+    /* Storm AI Overlay */
+    #storm-ai-shell {
+      position: absolute; bottom: 140px; left: 40px; z-index: 100;
+      width: 300px; padding: 15px; display: none;
+    }
+    #storm-input {
+      width: 100%; background: rgba(0,0,0,0.5); border: 1px solid var(--primary);
+      color: #fff; padding: 10px; font-family: var(--font-mono); margin-top: 10px;
+    }
 
   </style>
 </head>
@@ -144,9 +151,10 @@
        <button class="brutalist-element sensor-btn active" onclick="setSensor('vision', this)">VISION</button>
        <button class="brutalist-element sensor-btn" onclick="setSensor('thermal', this)">THERMAL</button>
        <button class="brutalist-element sensor-btn" onclick="setSensor('radar', this)">SAR</button>
-       <button class="brutalist-element sensor-btn" onclick="setSensor('chem', this)">CHEM</button>
-       <button class="brutalist-element sensor-btn" onclick="setSensor('seismic', this)">SEISMIC</button>
+       <button class="brutalist-element sensor-btn weather" onclick="toggleClouds(this)">CLOUDS</button>
+       <button class="brutalist-element sensor-btn" onclick="toggleLandmarks(this)">LANDMARKS</button>
        <button class="brutalist-element sensor-btn" onclick="toggleLabels()">TAGS</button>
+       <button class="brutalist-element sensor-btn" style="border-color:var(--accent)" onclick="toggleStormAI()">STORM_AI</button>
     </div>
     <div class="brutalist-element timeline-bar">
        <span style="font-size:10px; font-family:var(--font-mono)">HISTORY</span>
@@ -155,7 +163,11 @@
     </div>
   </div>
 
-  <script>
+  <div id="storm-ai-shell" class="brutalist-element">
+    <div class="hud-label" style="color:var(--accent)">STORM_AI // COGNITIVE_UPLINK</div>
+    <div id="storm-output" style="font-size:12px; margin-top:5px;">Awaiting command...</div>
+    <input type="text" id="storm-input" placeholder="Type command..." onkeypress="handleStormCommand(event)">
+  </div>
     Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJjOTVhZGI5Zi0wMTYzLTQ2MWEtYTBjYS02OTc5ZGNkNTY3ZDMiLCJpZCI6NTcwNzEsImlhdCI6MTc2MjQ3OTkyNH0.1bx7V2IFDE_Id5uqrQx-pJvRlzH34NDa2zc8vDY-Y0w';
     
     let viewer;
@@ -253,25 +265,53 @@
              })
           });
           
+          viewer.scene.globe.enableLighting = true; // Physical depth
+          viewer.scene.fog.enabled = true; // Atmospheric haze
+          viewer.scene.skyAtmosphere.show = true; 
+          
           initApp();
        } catch(e) { console.error(e); }
     })();
 
     function initApp() {
        viewer.clock.onTick.addEventListener(updateHUD);
-       
-       // Descent Trigger
+
+       // Descent & Mode Trigger
        viewer.camera.changed.addEventListener(() => {
           const height = viewer.camera.positionCartographic.height;
           const diveBtn = document.getElementById('btn-dive');
+          
           if (height < 20000) diveBtn.style.display = 'block';
           else diveBtn.style.display = 'none';
 
+          const fx = document.getElementById('overlay-fx');
           if (height < 300) {
-             document.getElementById('overlay-fx').style.display = 'block';
-             document.getElementById('overlay-fx').style.backgroundImage = 'radial-gradient(circle, transparent 20%, rgba(74, 222, 128, 0.05) 100%)';
-          } else {
-             document.getElementById('overlay-fx').style.display = 'none';
+             fx.style.display = 'block';
+             fx.style.backgroundImage = 'linear-gradient(rgba(74, 222, 128, 0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(74, 222, 128, 0.1) 1px, transparent 1px)';
+             fx.style.backgroundSize = '20px 20px';
+          } else if (height < 5000000) {
+             if (fx.style.backgroundImage && fx.style.backgroundImage.includes('linear-gradient')) {
+                fx.style.display = 'none';
+                fx.style.backgroundImage = 'none';
+             }
+          }
+       });
+
+       // Interplanetary Transition
+       viewer.camera.moveEnd.addEventListener(() => {
+          const height = viewer.camera.positionCartographic.height;
+          const fx = document.getElementById('overlay-fx');
+          if (height > 5000000) { // 5,000 km
+             fx.style.display = 'block';
+             fx.style.background = 'radial-gradient(circle, transparent 20%, rgba(0,0,0,0.8) 100%)';
+             document.getElementById('hud-mode').innerText = 'INTERPLANETARY';
+             document.getElementById('hud-mode').style.color = '#f9ca24';
+          } else if (height > 300) {
+             fx.style.display = 'none';
+             if (!GroundControl.active) {
+                document.getElementById('hud-mode').innerText = 'AERIAL_ORBIT';
+                document.getElementById('hud-mode').style.color = 'var(--accent)';
+             }
           }
        });
     }
@@ -287,19 +327,26 @@
                 const dest = results[0].destination;
                 
                 let targetPos;
+                const isAddress = /\d/.test(query); // Simple heuristic: query has a number
+                const targetAlt = isAddress ? 150 : 1000; // 150m for addresses, 1km for cities
+
                 if (dest instanceof Cesium.Rectangle) {
                    const center = Cesium.Rectangle.center(dest);
-                   targetPos = Cesium.Cartesian3.fromRadians(center.longitude, center.latitude, 15000);
+                   targetPos = Cesium.Cartesian3.fromRadians(center.longitude, center.latitude, targetAlt);
                 } else {
                    const carto = Cesium.Ellipsoid.WGS84.cartesianToCartographic(dest);
-                   targetPos = Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, 15000);
+                   targetPos = Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, targetAlt);
                 }
 
                 viewer.camera.flyTo({ 
                    destination: targetPos, 
-                   duration: 3.0,
+                   duration: 4.5,
+                   orientation: {
+                      pitch: Cesium.Math.toRadians(isAddress ? -30 : -45),
+                      heading: 0,
+                      roll: 0
+                   },
                    complete: () => {
-                      const carto = viewer.camera.positionCartographic;
                       resolveContext(query, targetPos);
                    }
                 });
@@ -376,10 +423,111 @@
        }
     }
 
+    let cloudLayer = null;
+    function toggleClouds(btn) {
+       if (!cloudLayer) {
+          cloudLayer = viewer.imageryLayers.addImageryProvider(new Cesium.WebMapTileServiceImageryProvider({
+             url: 'https://gibs.earthdata.nasa.gov/wmts/epsg4326/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/default/250m/{TileMatrix}/{TileRow}/{TileCol}.jpg',
+             layer: 'MODIS_Terra_CorrectedReflectance_TrueColor',
+             style: 'default', format: 'image/jpeg', tileMatrixSetID: '250m', maximumLevel: 8
+          }));
+          btn.classList.add('active');
+       } else {
+          viewer.imageryLayers.remove(cloudLayer);
+          cloudLayer = null;
+          btn.classList.remove('active');
+       }
+    }
+
+    let landmarksEnabled = false;
+    const landmarks = [
+       { name: "EIFFEL_TOWER", lat: 48.8584, lon: 2.2945 },
+       { name: "STATUE_OF_LIBERTY", lat: 40.6892, lon: -74.0445 },
+       { name: "GREAT_PYRAMID", lat: 29.9792, lon: 31.1342 },
+       { name: "BURJ_KHALIFA", lat: 25.1972, lon: 55.2744 }
+    ];
+
+    const landmarkEntities = [];
+    function toggleLandmarks(btn) {
+       landmarksEnabled = !landmarksEnabled;
+       if (landmarksEnabled) {
+          landmarks.forEach(l => {
+             const e = viewer.entities.add({
+                name: l.name,
+                position: Cesium.Cartesian3.fromDegrees(l.lon, l.lat),
+                point: { pixelSize: 10, color: Cesium.Color.fromCssColorString('#f9ca24'), outlineWidth: 2 }
+             });
+             landmarkEntities.push(e);
+          });
+          btn.classList.add('active');
+       } else {
+          landmarkEntities.forEach(e => viewer.entities.remove(e));
+          landmarkEntities.length = 0;
+          btn.classList.remove('active');
+       }
+    }
+
+    let activeSensor = 'vision';
+    let sensorLayers = [];
     function setSensor(mode, btn) {
        document.querySelectorAll('.sensor-btn').forEach(b => b.classList.remove('active'));
        btn.classList.add('active');
-       // Logic for sensor post-processing/layers would go here, simplified for spine focus.
+       activeSensor = mode;
+
+       // Clear old sensor layers and post-processes
+       sensorLayers.forEach(l => viewer.imageryLayers.remove(l));
+       sensorLayers = [];
+       viewer.scene.postProcessStages.removeAll();
+
+       if (mode === 'thermal') {
+          const thermalStage = Cesium.PostProcessStageLibrary.createBlackAndWhiteStage();
+          viewer.scene.postProcessStages.add(thermalStage);
+          // Add a heat overlay (pseudo-thermal)
+          const heat = viewer.imageryLayers.addImageryProvider(new Cesium.WebMapTileServiceImageryProvider({
+             url: 'https://gibs.earthdata.nasa.gov/wmts/epsg4326/best/MODIS_Terra_L3_Land_Surface_Temp_Day/default/default/250m/{TileMatrix}/{TileRow}/{TileCol}.png',
+             layer: 'MODIS_Terra_L3_Land_Surface_Temp_Day',
+             style: 'default', format: 'image/png', tileMatrixSetID: '250m', maximumLevel: 5
+          }));
+          sensorLayers.push(heat);
+       } else if (mode === 'radar') {
+          const edgeStage = Cesium.PostProcessStageLibrary.createEdgeDetectionStage();
+          viewer.scene.postProcessStages.add(edgeStage);
+          const sar = viewer.imageryLayers.addImageryProvider(new Cesium.WebMapTileServiceImageryProvider({
+             url: 'https://gibs.earthdata.nasa.gov/wmts/epsg4326/best/Coastline/default/default/250m/{TileMatrix}/{TileRow}/{TileCol}.png',
+             layer: 'Coastline',
+             style: 'default', format: 'image/png', tileMatrixSetID: '250m', maximumLevel: 5
+          }));
+          sensorLayers.push(sar);
+       }
+    }
+
+    function toggleStormAI() {
+       const shell = document.getElementById('storm-ai-shell');
+       shell.style.display = shell.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function handleStormCommand(e) {
+       if (e.key === 'Enter') {
+          const cmd = e.target.value.toLowerCase();
+          const out = document.getElementById('storm-output');
+          e.target.value = '';
+
+          if (cmd.includes('pyramid') || cmd.includes('giza')) {
+             out.innerText = "Acknowledged. Routing to Giza Plateau.";
+             viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(31.1342, 29.9792, 500) });
+          } else if (cmd.includes('clouds')) {
+             out.innerText = "Synchronizing atmospheric stack.";
+             toggleClouds(document.querySelector('.sensor-btn.weather'));
+          } else if (cmd.includes('solar') || cmd.includes('space')) {
+             out.innerText = "Breaking orbit. Initiating interplanetary scale.";
+             viewer.camera.flyTo({ 
+                destination: Cesium.Cartesian3.fromRadians(0, 0, 100000000), // Very far
+                duration: 5.0 
+             });
+          } else {
+             out.innerText = "Command unrecognized. Forwarding to ØCore.";
+          }
+       }
     }
 
   </script>
