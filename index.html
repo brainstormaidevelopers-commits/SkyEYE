@@ -217,7 +217,10 @@
           
           const moveTick = () => {
              if (!this.active) return;
-             const moveAmount = 2.0;
+             // Adaptive speed: slower when closer to ground
+             const height = viewer.camera.positionCartographic.height;
+             const moveAmount = Math.max(0.5, Math.min(height * 0.1, 5.0)); 
+
              if (this.activeKeys.has('w')) viewer.camera.moveForward(moveAmount);
              if (this.activeKeys.has('s')) viewer.camera.moveBackward(moveAmount);
              if (this.activeKeys.has('a')) viewer.camera.moveLeft(moveAmount);
@@ -261,7 +264,7 @@
        viewer.camera.changed.addEventListener(() => {
           const height = viewer.camera.positionCartographic.height;
           const diveBtn = document.getElementById('btn-dive');
-          if (height < 2000) diveBtn.style.display = 'block';
+          if (height < 20000) diveBtn.style.display = 'block';
           else diveBtn.style.display = 'none';
 
           if (height < 300) {
@@ -282,8 +285,24 @@
              const results = await geocoder.geocode(query);
              if (results && results.length > 0) {
                 const dest = results[0].destination;
-                viewer.camera.flyTo({ destination: dest, duration: 3.0 });
-                setTimeout(() => resolveContext(query, dest), 3200);
+                
+                let targetPos;
+                if (dest instanceof Cesium.Rectangle) {
+                   const center = Cesium.Rectangle.center(dest);
+                   targetPos = Cesium.Cartesian3.fromRadians(center.longitude, center.latitude, 15000);
+                } else {
+                   const carto = Cesium.Ellipsoid.WGS84.cartesianToCartographic(dest);
+                   targetPos = Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, 15000);
+                }
+
+                viewer.camera.flyTo({ 
+                   destination: targetPos, 
+                   duration: 3.0,
+                   complete: () => {
+                      const carto = viewer.camera.positionCartographic;
+                      resolveContext(query, targetPos);
+                   }
+                });
              }
           } catch(err) { console.error(err); }
        }
